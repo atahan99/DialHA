@@ -1,0 +1,122 @@
+# Current-day weather straight from Open-Meteo — no API key, no HA entity.
+# https://open-meteo.com/en/docs
+# Coordinates + display name live in secrets.yaml next to `timezone`; the API's
+# timezone=auto derives the local day from those coordinates, so the daily
+# high/low always belongs to the same day the Dial's clock is showing.
+
+substitutions:
+  wx_latitude: !secret latitude
+  wx_longitude: !secret longitude
+  wx_place: !secret weather_place
+
+json:
+
+http_request:
+  id: http_client
+  useragent: esphome/m5dial
+  timeout: 8s
+  # Public forecast data — skipping cert validation keeps the CA bundle out of flash.
+  verify_ssl: false
+  watchdog_timeout: 12s
+
+globals:
+  - id: wx_valid
+    type: bool
+    initial_value: "false"
+  - id: wx_temp
+    type: float
+    initial_value: "NAN"
+  - id: wx_hum
+    type: float
+    initial_value: "NAN"
+  - id: wx_tmax
+    type: float
+    initial_value: "NAN"
+  - id: wx_tmin
+    type: float
+    initial_value: "NAN"
+  - id: wx_code
+    type: int
+    initial_value: "-1"
+  # 3-hourly outlook for the rest of today: parallel arrays, up to 4 slots
+  - id: wx_hr_hour
+    type: std::vector<int>
+  - id: wx_hr_temp
+    type: std::vector<float>
+  - id: wx_hr_code
+    type: std::vector<int>
+
+script:
+  - id: weather_fetch
+    mode: single
+    then:
+      - http_request.get:
+          url: "https://api.open-meteo.com/v1/forecast?latitude=${wx_latitude}&longitude=${wx_longitude}&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&hourly=temperature_2m,weather_code&forecast_days=1&timezone=auto"
+          capture_response: true
+          max_response_buffer_size: 8kB
+          on_response:
+            then:
+              - lambda: |-
+                  if (response->status_code != 200) {
+                    ESP_LOGW("weather", "HTTP %d", response->status_code);
+                    return;
+                  }
+                  bool ok = json::parse_json(body, [](JsonObject root) -> bool {
+                    JsonObject cur = root["current"];
+                    if (cur.isNull())
+                      return false;
+                    id(wx_temp) = cur["temperature_2m"] | NAN;
+                    id(wx_hum) = cur["relative_humidity_2m"] | NAN;
+                    id(wx_code) = cur["weather_code"] | -1;
+                    JsonObject daily = root["daily"];
+                    if (!daily.isNull()) {
+                      id(wx_tmax) = daily["temperature_2m_max"][0] | NAN;
+                      id(wx_tmin) = daily["temperature_2m_min"][0] | NAN;
+                    }
+                    // Hourly arrays are local-time (timezone=auto), index == hour
+                    // of day, so start from the next 3h boundary after now.
+                    JsonObject hourly = root["hourly"];
+                    id(wx_hr_hour).clear();
+                    id(wx_hr_temp).clear();
+                    id(wx_hr_code).clear();
+                    if (!hourly.isNull()) {
+                      JsonArray ht = hourly["temperature_2m"];
+                      JsonArray hc = hourly["weather_code"];
+                      auto now = id(sntp_time).now();
+                      if (!now.is_valid()) now = id(rtctime).now();
+                      int start = now.is_valid() ? now.hour : 0;
+                      start = ((start / 3) + 1) * 3;  // next 3h slot
+                      for (int h = start; h < 24 && id(wx_hr_hour).size() < 4; h += 3) {
+                        if ((size_t) h >= ht.size())
+                          break;
+                        id(wx_hr_hour).push_back(h);
+                        id(wx_hr_temp).push_back(ht[h] | NAN);
+                        id(wx_hr_code).push_back(hc[h] | -1);
+                      }
+                    }
+                    id(wx_valid) = true;
+                    return true;
+                  });
+                  if (ok) {
+                    ESP_LOGI("weather", "%.1f°C %.0f%% code %d (%.0f/%.0f) +%u hourly",
+                             id(wx_temp), id(wx_hum), id(wx_code), id(wx_tmin),
+                             id(wx_tmax), (unsigned) id(wx_hr_hour).size());
+                  } else {
+                    ESP_LOGW("weather", "unparseable response");
+                  }
+          on_error:
+            then:
+              - logger.log:
+                  level: WARN
+                  format: "weather request failed"
+      - script.execute: weather_refresh
+
+interval:
+  - interval: 15min
+    startup_delay: 20s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - script.execute: weather_fetch

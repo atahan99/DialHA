@@ -1,0 +1,616 @@
+# Time functions — one dedicated page each, reached from the Time hub ring.
+#   page_time (hub) -> page_cities | page_pomodoro | page_stopwatch
+#                      page_timer  | page_weather
+# Cities: edit city_* / home_utc_offset in packages/entities.yaml
+# Weather: fetched in packages/weather.yaml (Open-Meteo); tap the hero to refresh
+# Home clock face: lbl_clock_main / dow / dom / ind_clock_min (page_clock)
+
+globals:
+  - id: city_index
+    type: int
+    initial_value: "0"
+  - id: sw_running
+    type: bool
+    initial_value: "false"
+  - id: sw_ms
+    type: int
+    initial_value: "0"
+  - id: timer_running
+    type: bool
+    initial_value: "false"
+  - id: timer_sec
+    type: int
+    initial_value: "300"
+  - id: timer_remain
+    type: int
+    initial_value: "300"
+  - id: pomo_running
+    type: bool
+    initial_value: "false"
+  - id: pomo_focus
+    type: bool
+    initial_value: "true"
+  - id: pomo_remain
+    type: int
+    initial_value: "1500"
+  - id: pomo_focus_len
+    type: int
+    initial_value: "1500"
+  - id: pomo_sessions
+    type: int
+    initial_value: "0"
+  # Time hub ring focus: 0 cities 1 pomodoro 2 stopwatch 3 timer 4 weather
+  - id: time_hub_index
+    type: int
+    initial_value: "0"
+
+interval:
+  - interval: 100ms
+    then:
+      - if:
+          condition:
+            lambda: "return id(sw_running);"
+          then:
+            - lambda: "id(sw_ms) += 100;"
+            - if:
+                condition:
+                  lvgl.page.is_showing: page_stopwatch
+                then:
+                  - script.execute: sw_refresh
+  - interval: 1s
+    then:
+      # Home clock — prefer SNTP, then HA, then RTC (ESPTime.day_of_week: Sunday=1)
+      - if:
+          condition:
+            lvgl.page.is_showing: page_clock
+          then:
+            - lvgl.label.update:
+                id: lbl_clock_main
+                text: !lambda |-
+                  auto t = id(sntp_time).now();
+                  if (!t.is_valid()) t = id(ha_time).now();
+                  if (!t.is_valid()) t = id(rtctime).now();
+                  char buf[16];
+                  if (!t.is_valid()) return std::string("--:--");
+                  snprintf(buf, sizeof(buf), "%02d:%02d", t.hour, t.minute);
+                  return std::string(buf);
+            - lvgl.label.update:
+                id: lbl_clock_dow
+                text: !lambda |-
+                  auto t = id(sntp_time).now();
+                  if (!t.is_valid()) t = id(ha_time).now();
+                  if (!t.is_valid()) t = id(rtctime).now();
+                  static const char* days[] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
+                  if (!t.is_valid() || t.day_of_week < 1 || t.day_of_week > 7)
+                    return std::string("---");
+                  return std::string(days[t.day_of_week - 1]);
+            - lvgl.label.update:
+                id: lbl_clock_dom
+                text: !lambda |-
+                  auto t = id(sntp_time).now();
+                  if (!t.is_valid()) t = id(ha_time).now();
+                  if (!t.is_valid()) t = id(rtctime).now();
+                  char buf[8];
+                  if (!t.is_valid()) return std::string("--");
+                  snprintf(buf, sizeof(buf), "%02d", t.day_of_month);
+                  return std::string(buf);
+            - lvgl.indicator.update:
+                id: ind_clock_min
+                value: !lambda |-
+                  auto t = id(sntp_time).now();
+                  if (!t.is_valid()) t = id(ha_time).now();
+                  if (!t.is_valid()) t = id(rtctime).now();
+                  if (!t.is_valid()) return 0.0f;
+                  return (float)t.minute + (t.second / 60.0f);
+      - if:
+          condition:
+            lvgl.page.is_showing: page_time
+          then:
+            - script.execute: time_hub_refresh
+      - if:
+          condition:
+            lvgl.page.is_showing: page_cities
+          then:
+            - script.execute: cities_refresh
+      - if:
+          condition:
+            lambda: "return id(timer_running) && id(timer_remain) > 0;"
+          then:
+            - lambda: |-
+                id(timer_remain) -= 1;
+                if (id(timer_remain) <= 0) {
+                  id(timer_running) = false;
+                  id(timer_remain) = 0;
+                }
+            - if:
+                condition:
+                  lambda: "return id(timer_remain) <= 0;"
+                then:
+                  - script.execute:
+                      id: ui_beep
+                      tune: "alarm:d=8,o=6,b=140:c,e,g,c,g,e,c"
+            - if:
+                condition:
+                  lvgl.page.is_showing: page_timer
+                then:
+                  - script.execute: timer_refresh
+      - if:
+          condition:
+            lambda: "return id(pomo_running) && id(pomo_remain) > 0;"
+          then:
+            - lambda: |-
+                id(pomo_remain) -= 1;
+                if (id(pomo_remain) <= 0) {
+                  if (id(pomo_focus)) {
+                    id(pomo_sessions) += 1;
+                    id(pomo_focus) = false;
+                    id(pomo_remain) = 300;
+                  } else {
+                    id(pomo_focus) = true;
+                    id(pomo_remain) = id(pomo_focus_len);
+                  }
+                }
+            - if:
+                condition:
+                  lvgl.page.is_showing: page_pomodoro
+                then:
+                  - script.execute: pomo_refresh
+
+script:
+  # —— Time hub ————————————————————————————————————————————————
+  - id: time_hub_refresh
+    then:
+      - lvgl.label.update:
+          id: lbl_hub_clock
+          text: !lambda |-
+            auto t = id(sntp_time).now();
+            if (!t.is_valid()) t = id(ha_time).now();
+            if (!t.is_valid()) t = id(rtctime).now();
+            if (!t.is_valid()) return std::string("--:--");
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%02d:%02d", t.hour, t.minute);
+            return std::string(buf);
+
+  - id: time_hub_focus
+    then:
+      - lambda: |-
+          int i = id(time_hub_index);
+          if (i < 0) i = 4;
+          if (i > 4) i = 0;
+          id(time_hub_index) = i;
+      - lvgl.widget.update:
+          id: btn_hub_cities
+          border_color: !lambda "return id(time_hub_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
+      - lvgl.widget.update:
+          id: btn_hub_pomo
+          border_color: !lambda "return id(time_hub_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
+      - lvgl.widget.update:
+          id: btn_hub_sw
+          border_color: !lambda "return id(time_hub_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
+      - lvgl.widget.update:
+          id: btn_hub_timer
+          border_color: !lambda "return id(time_hub_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
+      - lvgl.widget.update:
+          id: btn_hub_wx
+          border_color: !lambda "return id(time_hub_index) == 4 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
+      - lvgl.label.update:
+          id: icon_hub_cities
+          text_color: !lambda "return id(time_hub_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x63E7F2);"
+      - lvgl.label.update:
+          id: icon_hub_pomo
+          text_color: !lambda "return id(time_hub_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0xFF8A00);"
+      - lvgl.label.update:
+          id: icon_hub_sw
+          text_color: !lambda "return id(time_hub_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x9EA7AA);"
+      - lvgl.label.update:
+          id: icon_hub_timer
+          text_color: !lambda "return id(time_hub_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x9EA7AA);"
+      - lvgl.label.update:
+          id: icon_hub_wx
+          text_color: !lambda "return id(time_hub_index) == 4 ? lv_color_hex(0xFFD400) : lv_color_hex(0x63E7F2);"
+
+  - id: time_hub_open
+    then:
+      - lambda: |-
+          int i = id(time_hub_index);
+          if (i < 0) i = 0;
+          if (i > 4) i = 4;
+          id(time_hub_index) = i;
+      - script.execute:
+          id: ui_beep
+          tune: "mode:d=32,o=5,b=180:e"
+      - if:
+          condition:
+            lambda: "return id(time_hub_index) == 0;"
+          then:
+            - script.execute: cities_refresh
+            - lvgl.page.show: page_cities
+      - if:
+          condition:
+            lambda: "return id(time_hub_index) == 1;"
+          then:
+            - script.execute: pomo_refresh
+            - lvgl.page.show: page_pomodoro
+      - if:
+          condition:
+            lambda: "return id(time_hub_index) == 2;"
+          then:
+            - script.execute: sw_refresh
+            - lvgl.page.show: page_stopwatch
+      - if:
+          condition:
+            lambda: "return id(time_hub_index) == 3;"
+          then:
+            - script.execute: timer_refresh
+            - lvgl.page.show: page_timer
+      - if:
+          condition:
+            lambda: "return id(time_hub_index) == 4;"
+          then:
+            - script.execute: weather_refresh
+            - lvgl.page.show: page_weather
+            - if:
+                condition:
+                  lambda: "return !id(wx_valid);"
+                then:
+                  - script.execute: weather_fetch
+
+  # —— Cities ——————————————————————————————————————————————————
+  - id: cities_refresh
+    then:
+      - lvgl.label.update:
+          id: lbl_city_time
+          text: !lambda |-
+            // Standard offsets + per-city DST rule (see include/tz_dst.h).
+            // The rule is evaluated on the UTC date, which is exact except for
+            // a few hours around each switchover.
+            static const int offs[] = {
+              ${city_1_utc_offset}, ${city_2_utc_offset}, ${city_3_utc_offset},
+              ${city_4_utc_offset}, ${city_5_utc_offset}
+            };
+            static const int rules[] = {
+              ${city_1_dst}, ${city_2_dst}, ${city_3_dst},
+              ${city_4_dst}, ${city_5_dst}
+            };
+            int i = id(city_index) % 5;
+            auto t = id(sntp_time).now();
+            if (!t.is_valid()) t = id(ha_time).now();
+            if (!t.is_valid()) t = id(rtctime).now();
+            if (!t.is_valid()) return std::string("--:--");
+            // Local home time -> UTC (home carries its own rule too)
+            int home_off = ${home_utc_offset} +
+                dst_offset(${home_dst}, t.year, t.month, t.day_of_month);
+            int uy = t.year, um = t.month, ud = t.day_of_month;
+            int uh = t.hour - home_off;
+            if (uh < 0) {
+              uh += 24;
+              if (--ud < 1) {
+                if (--um < 1) { um = 12; uy--; }
+                ud = tz_days_in_month(uy, um);
+              }
+            } else if (uh >= 24) {
+              uh -= 24;
+              if (++ud > tz_days_in_month(uy, um)) {
+                ud = 1;
+                if (++um > 12) { um = 1; uy++; }
+              }
+            }
+            int h = (uh + offs[i] + dst_offset(rules[i], uy, um, ud) + 48) % 24;
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%02d:%02d", h, t.minute);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_city_name
+          text: !lambda |-
+            static const char* names[] = {
+              "${city_1_name}", "${city_2_name}", "${city_3_name}",
+              "${city_4_name}", "${city_5_name}"
+            };
+            return std::string(names[id(city_index) % 5]);
+      - lvgl.label.update:
+          id: lbl_city_dots
+          text: !lambda |-
+            std::string s;
+            for (int i = 0; i < 5; i++)
+              s += (i == id(city_index) % 5) ? "*" : ".";
+            return s;
+
+  - id: city_step
+    parameters:
+      delta: int
+    then:
+      - lambda: "id(city_index) = (id(city_index) + (delta > 0 ? 1 : 4)) % 5;"
+      - script.execute: cities_refresh
+      - script.execute:
+          id: ui_beep
+          tune: "click:d=32,o=5,b=200:c"
+
+  # —— Pomodoro ————————————————————————————————————————————————
+  - id: pomo_refresh
+    then:
+      - lvgl.label.update:
+          id: lbl_pomo_time
+          text: !lambda |-
+            int t = id(pomo_remain);
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%02d:%02d", t / 60, t % 60);
+            return std::string(buf);
+          text_color: !lambda |-
+            return id(pomo_focus) ? lv_color_hex(0xFF8A00) : lv_color_hex(0x63E7F2);
+      - lvgl.label.update:
+          id: lbl_pomo_state
+          text: !lambda |-
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%s  -  %d done",
+                     id(pomo_focus) ? "FOCUS" : "BREAK", id(pomo_sessions));
+            return std::string(buf);
+      - lvgl.label.update:
+          id: icon_pomo_play
+          text: !lambda |-
+            return std::string(id(pomo_running) ? "\U000F03E4" : "\U000F040A");
+      - lvgl.arc.update:
+          id: arc_pomo
+          value: !lambda |-
+            int total = id(pomo_focus) ? id(pomo_focus_len) : 300;
+            if (total <= 0) return 0.0f;
+            return 100.0f * (float) id(pomo_remain) / (float) total;
+
+  - id: pomo_toggle
+    then:
+      - lambda: "id(pomo_running) = !id(pomo_running);"
+      - script.execute: pomo_refresh
+      - script.execute:
+          id: ui_beep
+          tune: "ok:d=32,o=5,b=180:g,c6"
+
+  - id: pomo_reset
+    then:
+      - lambda: |-
+          id(pomo_running) = false;
+          id(pomo_focus) = true;
+          id(pomo_remain) = id(pomo_focus_len);
+      - script.execute: pomo_refresh
+      - script.execute:
+          id: ui_beep
+          tune: "rst:d=32,o=5,b=180:c6,g"
+
+  # —— Stopwatch ———————————————————————————————————————————————
+  - id: sw_refresh
+    then:
+      - lvgl.label.update:
+          id: lbl_sw_time
+          text: !lambda |-
+            int t = id(sw_ms);
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%02d:%02d.%01d",
+                     (t / 60000) % 60, (t / 1000) % 60, (t / 100) % 10);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_sw_state
+          text: !lambda |-
+            return std::string(id(sw_running) ? "RUNNING" : "STOPPED");
+          text_color: !lambda |-
+            return id(sw_running) ? lv_color_hex(0x63E7F2) : lv_color_hex(0x9EA7AA);
+      - lvgl.label.update:
+          id: icon_sw_play
+          text: !lambda |-
+            return std::string(id(sw_running) ? "\U000F03E4" : "\U000F040A");
+
+  - id: sw_toggle
+    then:
+      - lambda: "id(sw_running) = !id(sw_running);"
+      - script.execute: sw_refresh
+      - script.execute:
+          id: ui_beep
+          tune: "ok:d=32,o=5,b=180:g,c6"
+
+  - id: sw_reset
+    then:
+      - lambda: |-
+          id(sw_running) = false;
+          id(sw_ms) = 0;
+      - script.execute: sw_refresh
+      - script.execute:
+          id: ui_beep
+          tune: "rst:d=32,o=5,b=180:c6,g"
+
+  # —— Timer ———————————————————————————————————————————————————
+  - id: timer_refresh
+    then:
+      - lvgl.label.update:
+          id: lbl_timer_time
+          text: !lambda |-
+            int t = id(timer_remain);
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%02d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60);
+            return std::string(buf);
+          text_color: !lambda |-
+            return id(timer_running) ? lv_color_hex(0x63E7F2) : lv_color_hex(0xF4F7F8);
+      - lvgl.label.update:
+          id: lbl_timer_state
+          text: !lambda |-
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%s  -  set %d min",
+                     id(timer_running) ? "RUNNING" : "READY", id(timer_sec) / 60);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: icon_timer_play
+          text: !lambda |-
+            return std::string(id(timer_running) ? "\U000F03E4" : "\U000F040A");
+      - lvgl.arc.update:
+          id: arc_timer
+          value: !lambda |-
+            if (id(timer_sec) <= 0) return 0.0f;
+            return 100.0f * (float) id(timer_remain) / (float) id(timer_sec);
+
+  - id: timer_toggle
+    then:
+      - lambda: |-
+          if (!id(timer_running) && id(timer_remain) == 0)
+            id(timer_remain) = id(timer_sec);
+          id(timer_running) = !id(timer_running);
+      - script.execute: timer_refresh
+      - script.execute:
+          id: ui_beep
+          tune: "ok:d=32,o=5,b=180:g,c6"
+
+  - id: timer_reset
+    then:
+      - lambda: |-
+          id(timer_running) = false;
+          id(timer_remain) = id(timer_sec);
+      - script.execute: timer_refresh
+      - script.execute:
+          id: ui_beep
+          tune: "rst:d=32,o=5,b=180:c6,g"
+
+  - id: timer_adjust
+    parameters:
+      delta: int
+    then:
+      - lambda: |-
+          if (id(timer_running)) return;
+          id(timer_sec) += (delta > 0) ? 60 : -60;
+          if (id(timer_sec) < 60) id(timer_sec) = 60;
+          if (id(timer_sec) > 7200) id(timer_sec) = 7200;
+          id(timer_remain) = id(timer_sec);
+      - script.execute: timer_refresh
+
+  - id: pomo_adjust
+    parameters:
+      delta: int
+    then:
+      - lambda: |-
+          if (id(pomo_running)) return;
+          id(pomo_focus_len) += (delta > 0) ? 60 : -60;
+          if (id(pomo_focus_len) < 60) id(pomo_focus_len) = 60;
+          if (id(pomo_focus_len) > 3600) id(pomo_focus_len) = 3600;
+          if (id(pomo_focus)) id(pomo_remain) = id(pomo_focus_len);
+      - script.execute: pomo_refresh
+
+  # —— Weather —————————————————————————————————————————————————
+  - id: weather_refresh
+    then:
+      - lvgl.label.update:
+          id: icon_wx_hero
+          text: !lambda "return std::string(wmo_icon(id(wx_code)));"
+      - lvgl.label.update:
+          id: lbl_wx_temp
+          text: !lambda |-
+            if (isnan(id(wx_temp))) return std::string("--°");
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°", id(wx_temp));
+            return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_wx_sky
+          text: !lambda |-
+            if (!id(wx_valid)) return std::string("FETCHING");
+            return std::string(wmo_word(id(wx_code)));
+      - lvgl.label.update:
+          id: lbl_wx_sub
+          text: !lambda |-
+            if (!id(wx_valid)) return std::string("");
+            char buf[40];
+            snprintf(buf, sizeof(buf), "%.0f / %.0f°   %.0f%%",
+                     id(wx_tmin), id(wx_tmax), id(wx_hum));
+            return std::string(buf);
+      - lvgl.label.update:
+          id: icon_wx_h0
+          text: !lambda |-
+            if (0 >= (int) id(wx_hr_code).size()) return std::string("");
+            return std::string(wmo_icon(id(wx_hr_code)[0]));
+      - lvgl.label.update:
+          id: lbl_wx_h0
+          text: !lambda |-
+            if (0 >= (int) id(wx_hr_hour).size()) return std::string("");
+            char buf[12];
+            snprintf(buf, sizeof(buf), "%02d", id(wx_hr_hour)[0]);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_wxt_h0
+          text: !lambda |-
+            if (0 >= (int) id(wx_hr_temp).size() || isnan(id(wx_hr_temp)[0]))
+              return std::string("");
+            char buf[12];
+            snprintf(buf, sizeof(buf), "%.0f°", id(wx_hr_temp)[0]);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: icon_wx_h1
+          text: !lambda |-
+            if (1 >= (int) id(wx_hr_code).size()) return std::string("");
+            return std::string(wmo_icon(id(wx_hr_code)[1]));
+      - lvgl.label.update:
+          id: lbl_wx_h1
+          text: !lambda |-
+            if (1 >= (int) id(wx_hr_hour).size()) return std::string("");
+            char buf[12];
+            snprintf(buf, sizeof(buf), "%02d", id(wx_hr_hour)[1]);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_wxt_h1
+          text: !lambda |-
+            if (1 >= (int) id(wx_hr_temp).size() || isnan(id(wx_hr_temp)[1]))
+              return std::string("");
+            char buf[12];
+            snprintf(buf, sizeof(buf), "%.0f°", id(wx_hr_temp)[1]);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: icon_wx_h2
+          text: !lambda |-
+            if (2 >= (int) id(wx_hr_code).size()) return std::string("");
+            return std::string(wmo_icon(id(wx_hr_code)[2]));
+      - lvgl.label.update:
+          id: lbl_wx_h2
+          text: !lambda |-
+            if (2 >= (int) id(wx_hr_hour).size()) return std::string("");
+            char buf[12];
+            snprintf(buf, sizeof(buf), "%02d", id(wx_hr_hour)[2]);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_wxt_h2
+          text: !lambda |-
+            if (2 >= (int) id(wx_hr_temp).size() || isnan(id(wx_hr_temp)[2]))
+              return std::string("");
+            char buf[12];
+            snprintf(buf, sizeof(buf), "%.0f°", id(wx_hr_temp)[2]);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: icon_wx_h3
+          text: !lambda |-
+            if (3 >= (int) id(wx_hr_code).size()) return std::string("");
+            return std::string(wmo_icon(id(wx_hr_code)[3]));
+      - lvgl.label.update:
+          id: lbl_wx_h3
+          text: !lambda |-
+            if (3 >= (int) id(wx_hr_hour).size()) return std::string("");
+            char buf[12];
+            snprintf(buf, sizeof(buf), "%02d", id(wx_hr_hour)[3]);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_wxt_h3
+          text: !lambda |-
+            if (3 >= (int) id(wx_hr_temp).size() || isnan(id(wx_hr_temp)[3]))
+              return std::string("");
+            char buf[12];
+            snprintf(buf, sizeof(buf), "%.0f°", id(wx_hr_temp)[3]);
+            return std::string(buf);
+
+  # Thin wrappers so on_click / encoder actions can be parameterless
+  - id: city_next
+    then:
+      - script.execute: {id: city_step, delta: 1}
+  - id: city_prev
+    then:
+      - script.execute: {id: city_step, delta: -1}
+  - id: timer_up
+    then:
+      - script.execute: {id: timer_adjust, delta: 1}
+  - id: timer_down
+    then:
+      - script.execute: {id: timer_adjust, delta: -1}
+  - id: pomo_up
+    then:
+      - script.execute: {id: pomo_adjust, delta: 1}
+  - id: pomo_down
+    then:
+      - script.execute: {id: pomo_adjust, delta: -1}
