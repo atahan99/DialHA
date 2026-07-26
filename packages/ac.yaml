@@ -20,17 +20,31 @@
 substitutions:
   # Frames sent per command. 1 = what the handheld remote does. Raise if the
   # AC misses commands at your mounting angle; each extra costs ~90ms.
-  ac_tx_repeats: "3"
+  ac_tx_repeats: "5"
+  # Carrier frequency. NOTE: this was never measured -- an IR demodulator
+  # strips the carrier, so the receiver cannot recover it, and the Pronto dump
+  # we captured shows 38kHz only because ESPHome hardcodes that in its dumper.
+  # If range is poor, try 36000 and 40000: a 2kHz mismatch against the AC's
+  # bandpass filter costs a large fraction of the range.
+  ac_carrier_hz: "38000"
+  # Duty of the carrier square wave = average LED power. 50% is standard;
+  # 33-50% is what TSOP-style receivers are designed for, so going much higher
+  # can reduce sensitivity rather than help. Worth a try, not a sure win.
+  ac_carrier_duty: "50"
 
 remote_transmitter:
   id: ir_tx
   pin: GPIO2
-  carrier_duty_percent: 50%
+  carrier_duty_percent: ${ac_carrier_duty}%
   non_blocking: false
   on_complete:
     then:
-      # Ignore our own emission on the co-located receiver
-      - lambda: "id(ac_rx_guard) = millis() + 300;"
+      # Ignore our own emission on the co-located receiver. Loopback mode
+      # skips the guard so the Dial decodes what it just sent, which verifies
+      # the transmitted frame bit-for-bit against what the remote produces.
+      - lambda: |-
+          if (!id(ir_loopback))
+            id(ac_rx_guard) = millis() + 300;
 
 remote_receiver:
   id: ir_rx
@@ -48,27 +62,54 @@ remote_receiver:
           // Follow the physical remote: decode, verify, adopt.
           if ((int32_t) (millis() - id(ac_rx_guard)) < 0)
             return;
-          if (x.size() < 56 || x.size() > 64)
+          // Log every external capture before the filters, otherwise a rejected
+          // frame is indistinguishable from nothing arriving at all.
+          ESP_LOGD("ac", "rx len=%u hdr=%d/%d", (unsigned) x.size(),
+                   x.size() > 0 ? (int) x[0] : 0, x.size() > 1 ? (int) x[1] : 0);
+          if (id(ir_capture_arm) && x.size() >= 56) {
+            // Drop the trailing idle space; keep the frame itself verbatim.
+            size_t n = x.size();
+            if (n > 0 && x[n - 1] < 0) n--;
+            id(ir_capture).assign(x.begin(), x.begin() + n);
+            id(ir_capture_arm) = false;
+            ESP_LOGI("ac", "CAPTURED %u pulses verbatim", (unsigned) n);
+          }
+          if (x.size() < 56 || x.size() > 64) {
+            ESP_LOGW("ac", "rx reject: length %u", (unsigned) x.size());
             return;
-          if (x[0] < 2400 || x[0] > 3600)
+          }
+          if (x[0] < 2400 || x[0] > 3600) {
+            ESP_LOGW("ac", "rx reject: header mark %d", (int) x[0]);
             return;
-          if (x[1] > -8500 || x[1] < -11000)
+          }
+          if (x[1] > -8500 || x[1] < -11000) {
+            ESP_LOGW("ac", "rx reject: header space %d", (int) x[1]);
             return;
+          }
+          // Stop at 28 bits. The captured vector is 60 entries -- 2 header,
+          // 56 bit halves, the stop mark and a trailing idle space -- so an
+          // unbounded loop pairs the stop mark with the idle and invents a
+          // 29th bit. (ESPHome's raw dumper prints size-1, which is why the
+          // protocol was originally measured as 59 pulses rather than 60.)
           uint32_t v = 0;
           int bits = 0;
-          for (size_t i = 2; i + 1 < x.size(); i += 2) {
+          for (size_t i = 2; i + 1 < x.size() && bits < 28; i += 2) {
             if (x[i] <= 0 || x[i + 1] >= 0)
               break;
             v = (v << 1) | ((-x[i + 1] > 1000) ? 1u : 0u);
             bits++;
           }
-          if (bits != 28)
+          if (bits != 28) {
+            ESP_LOGW("ac", "rx reject: %d bits", bits);
             return;
+          }
           int nib[7];
           for (int i = 0; i < 7; i++)
             nib[i] = (v >> (4 * (6 - i))) & 0xF;
-          if (nib[0] != 8 || nib[1] != 8)
+          if (nib[0] != 8 || nib[1] != 8) {
+            ESP_LOGW("ac", "rx reject: preamble %X%X", nib[0], nib[1]);
             return;
+          }
           int sum = 0;
           for (int i = 0; i < 6; i++)
             sum += nib[i];
@@ -113,6 +154,24 @@ globals:
   - id: ac_rx_guard
     type: uint32_t
     initial_value: "0"
+  - id: ir_beacon_count
+    type: int
+    initial_value: "0"
+  - id: ir_loopback
+    type: bool
+    initial_value: "false"
+  # Runtime repeat count so power frames can be sent once while state frames
+  # are repeated for range.
+  - id: ac_repeats
+    type: int
+    initial_value: "${ac_tx_repeats}"
+  # Verbatim capture/replay: proves whether our synthesised timing differs from
+  # the remote's in a way the AC cares about.
+  - id: ir_capture
+    type: std::vector<int32_t>
+  - id: ir_capture_arm
+    type: bool
+    initial_value: "false"
 
 script:
   - id: ac_persist
@@ -130,14 +189,14 @@ script:
     then:
       - remote_transmitter.transmit_raw:
           transmitter_id: ir_tx
-          carrier_frequency: 38kHz
+          carrier_frequency: ${ac_carrier_hz}Hz
           # The remote sends one frame per press, but the Unit IR's emitter is
           # much weaker than a handheld remote, so a marginal aim drops frames.
           # Every frame is absolute state, so resending is idempotent — the AC
           # itself re-sends an identical frame when you press TEMP+ at 30 C.
           # Costs ~230ms of blocking transmit per command instead of ~52ms.
           repeat:
-            times: ${ac_tx_repeats}
+            times: !lambda "return id(ac_repeats);"
             wait_time: 40ms
           code: !lambda |-
             uint32_t v = (uint32_t) code;
@@ -224,3 +283,106 @@ script:
           else:
             # Adjusting while off implies "turn on with these settings"
             - script.execute: ac_power_on
+
+# Remote control for bench testing: lets a host script drive the AC over the
+# ESPHome API so frames can be sent and compared without touching the Dial.
+api:
+  actions:
+    - action: ac_send_code
+      variables:
+        code: int
+      then:
+        - logger.log:
+            level: INFO
+            format: "API ac_send_code 0x%07X"
+            args: ["(unsigned) code"]
+        - script.execute:
+            id: ac_tx_code
+            code: !lambda "return code;"
+    - action: ac_loopback
+      variables:
+        enable: bool
+      then:
+        - lambda: |-
+            id(ir_loopback) = enable;
+            ESP_LOGI("ac", "IR loopback %s", enable ? "ON" : "OFF");
+    - action: ac_arm_capture
+      then:
+        - lambda: |-
+            id(ir_capture_arm) = true;
+            ESP_LOGI("ac", "armed - press the remote at the dome");
+    - action: ac_replay
+      then:
+        - if:
+            condition:
+              lambda: "return id(ir_capture).size() >= 56;"
+            then:
+              - logger.log:
+                  level: INFO
+                  format: "replaying captured frame verbatim"
+              - remote_transmitter.transmit_raw:
+                  transmitter_id: ir_tx
+                  carrier_frequency: ${ac_carrier_hz}Hz
+                  code: !lambda "return id(ir_capture);"
+            else:
+              - logger.log:
+                  level: WARN
+                  format: "nothing captured yet"
+    - action: ac_set_repeats
+      variables:
+        n: int
+      then:
+        - lambda: |-
+            id(ac_repeats) = (n < 1) ? 1 : n;
+            ESP_LOGI("ac", "tx repeats = %d", id(ac_repeats));
+    - action: ac_set_state
+      variables:
+        temp: int
+        fan: int
+        n3: int
+      then:
+        - lambda: |-
+            if (temp >= 18 && temp <= 30) id(ac_temp) = temp;
+            if (fan >= 0 && fan <= 5) id(ac_fan) = fan;
+            ESP_LOGI("ac", "API ac_set_state temp=%d fan=%d n3=%d",
+                     id(ac_temp), id(ac_fan), n3);
+        - script.execute:
+            id: ac_tx_state
+            n3: !lambda "return n3;"
+        - script.execute: ac_refresh
+
+# —— IR range diagnostics ——————————————————————————————————————
+# Beacon mode: re-sends the current state every 2s so you can carry the Dial
+# (or reposition the Unit IR) and hear exactly where the AC starts responding.
+# Safe to leave on: the frame is absolute state, so repeats change nothing.
+# Toggle from Home Assistant, then watch `esphome logs` for the send count.
+switch:
+  - platform: template
+    id: ir_beacon
+    name: "IR Beacon (range test)"
+    optimistic: true
+    icon: "mdi:signal-distance-variant"
+    turn_on_action:
+      - lambda: "id(ir_beacon_count) = 0;"
+      - logger.log:
+          level: INFO
+          format: "IR beacon ON - walk the emitter around, AC beeps when it hears"
+    turn_off_action:
+      - logger.log:
+          level: INFO
+          format: "IR beacon OFF"
+
+interval:
+  - interval: 2s
+    then:
+      - if:
+          condition:
+            switch.is_on: ir_beacon
+          then:
+            - lambda: |-
+                id(ir_beacon_count)++;
+                ESP_LOGI("ac", "beacon ping #%d  %dC fan=%d", id(ir_beacon_count),
+                         id(ac_temp), id(ac_fan));
+            - script.execute:
+                id: ac_tx_state
+                n3: 8
