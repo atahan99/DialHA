@@ -147,8 +147,31 @@ esphome logs m5dial.yaml --device <device-ip>
    at the AC's receiver window (line of sight, ≤5 m).
 2. **Receive** — press a button on the physical remote near the Unit IR dome.
    The log prints `remote: ON 24C fan=0` (or `remote: OFF`) and the Dial's
-   display follows. A `checksum fail` line means a partial capture — usually the
-   remote was too far from the dome.
+   display follows. Anything rejected says why (`rx reject: 29 bits`,
+   `rx reject: length 22`); raise the logger to `DEBUG` to see every capture.
+
+### IR diagnostics
+
+Built in, and worth knowing about before assuming the protocol is wrong:
+
+```bash
+python scripts/ac_test.py --host <ip> seq            # scripted on/temp/fan/off
+python scripts/ac_test.py --host <ip> sweep-fan 24   # every fan step
+python scripts/ac_test.py --host <ip> code 0x88C0051 # one exact frame
+```
+
+| Tool | Use |
+|---|---|
+| `ac_send_code` / `ac_set_state` | send exact frames from a host over the API |
+| `ac_loopback` | decode our **own** emission — verifies the transmitted frame bit-for-bit |
+| `ac_arm_capture` + `ac_replay` | store a remote frame verbatim and re-emit it, separating wrong bits from wrong timing |
+| `ac_set_repeats` | change the repeat count at runtime |
+| **IR Beacon** switch (HA) | re-sends state every 2s so you can walk the emitter around and hear where the AC responds |
+
+> If the AC stops responding after a long uptime or many OTA flashes, **reboot
+> the Dial**. The ESP32's RMT transmitter has been seen to degrade in that
+> situation: frames still leave the device and log normally, but the AC stops
+> acting on some of them. A power cycle restored it.
 
 Nothing at all in either direction points at the Unit IR cable/port rather than
 the protocol.
@@ -271,6 +294,7 @@ check_themes.py
 scripts/
   flash.sh                # compile → firmware/m5dial.bin → upload (USB or OTA)
   decode_ir.py            # decode ESPHome raw IR dumps (used for the AC protocol)
+  ac_test.py              # drive the AC over the API for bench testing
 firmware/                # full factory .bin (gitignored) + README
 include/
   wx_icons.h              # WMO code -> weather glyph / word

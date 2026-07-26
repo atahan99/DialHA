@@ -197,6 +197,19 @@ Run against the session's capture it reports
 | Stop | `+500 µs` mark |
 | Frame | 28 bits MSB-first, **59 pulses, sent once — no repeat frame** |
 
+> **A *received* frame is 60 entries, not 59.** ESPHome's raw dumper prints
+> `src.size() - 1`, hiding the trailing idle space, so measuring the protocol
+> from dumper output gives a count one short. A decoder that walks the vector
+> unbounded then pairs the stop mark with that idle and invents a 29th bit —
+> rejecting every frame. Bound the loop at the expected bit count:
+>
+> ```cpp
+> for (size_t i = 2; i + 1 < x.size() && bits < 28; i += 2) { ... }
+> ```
+>
+> This cost a long debugging session: receive-sync had never worked, and
+> because the rejects were silent it looked like nothing was arriving at all.
+
 The 3.0 ms / 9.65 ms header is unusual (most AC protocols use a roughly
 symmetric 4.4/4.3 ms lead-in) which is exactly why no built-in decoder matched.
 
@@ -255,6 +268,28 @@ as a constant. `n3` values `9`, `A`, `B`, `3` were seen during an early
 unlabelled round and correspond to other modes if anyone wants them later.
 
 ---
+
+## 5.4 Diagnostics that earned their keep
+
+Three tools, all still in the firmware, that turned a week of guessing into
+single measurements:
+
+| Tool | What it answers |
+|---|---|
+| `scripts/ac_test.py` | Drives the AC over the ESPHome API, so frames can be sent from a host and correlated with the device log without touching the Dial |
+| `ac_loopback` | Suppresses the self-reception guard so the Dial decodes its **own** emission — proves the transmitted frame bit-for-bit |
+| `ac_arm_capture` / `ac_replay` | Stores a received frame verbatim and re-emits it, separating "wrong bits" from "wrong timing/optics" |
+| `IR Beacon` switch | Re-sends state every 2s so you can walk the emitter around and hear where the AC responds |
+
+Two lessons worth keeping:
+
+1. **Never let a receive path reject silently.** The decoder discarded every
+   frame for one off-by-one reason, and because the rejects were silent it was
+   indistinguishable from "nothing is arriving". Logging the reason found it
+   immediately.
+2. **Measure, do not infer.** The carrier frequency was never measured — a
+   demodulator strips it, and the Pronto dump showed 38kHz only because
+   ESPHome hardcodes that constant. It is still an assumption.
 
 ## 6. Verification before flashing
 
