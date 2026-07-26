@@ -1,0 +1,136 @@
+# M5Dial board — pins from devices.esphome.io + invert_colors / LVGL fixes
+
+i2c:
+  - id: internal_i2c
+    sda: GPIO11
+    scl: GPIO12
+    scan: false
+
+spi:
+  id: spi_bus
+  mosi_pin: GPIO5
+  clk_pin: GPIO6
+
+output:
+  - platform: ledc
+    pin: GPIO3
+    id: buzzer_out
+  - platform: ledc
+    pin: GPIO9
+    id: backlight_output
+
+rtttl:
+  id: buzzer
+  output: buzzer_out
+
+light:
+  - platform: monochromatic
+    name: Backlight
+    id: display_backlight
+    output: backlight_output
+    default_transition_length: 0s
+    restore_mode: ALWAYS_ON
+
+display:
+  - platform: ili9xxx
+    id: round_display
+    model: GC9A01A
+    cs_pin: GPIO7
+    reset_pin: GPIO8
+    dc_pin: GPIO4
+    invert_colors: true
+    auto_clear_enabled: false
+    update_interval: never
+
+touchscreen:
+  - platform: ft5x06
+    id: touch
+    i2c_id: internal_i2c
+    address: 0x38
+    # Without this ESPHome polls the controller every loop; the FT3267 returns
+    # garbage when idle, which floods the log with "Failed to read status".
+    # With the IRQ attached ESPHome stops the poller and only reads on a touch.
+    interrupt_pin: GPIO14
+
+sensor:
+  - platform: rotary_encoder
+    id: encoder
+    name: Encoder
+    pin_a: GPIO40
+    pin_b: GPIO41
+    on_clockwise:
+      - script.execute: maybe_wake
+      - script.execute: encoder_nav_cw
+      - script.execute:
+          id: ui_beep
+          tune: "click:d=32,o=5,b=200:c"
+    on_anticlockwise:
+      - script.execute: maybe_wake
+      - script.execute: encoder_nav_ccw
+      - script.execute:
+          id: ui_beep
+          tune: "click:d=32,o=5,b=200:a"
+
+binary_sensor:
+  - platform: gpio
+    id: front_button
+    name: Front Button
+    pin:
+      number: GPIO42
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    on_press:
+      - script.execute: front_or_wake
+  # Plugged-in stand: GPIO46 as side / back button (not power-hold)
+  - platform: gpio
+    id: side_button
+    name: Side Button
+    pin:
+      number: GPIO46
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    on_press:
+      - script.execute: nav_back
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: wifi_ip
+      name: IP Address
+
+time:
+  # SNTP is the reliable source when HA API is not adopted yet
+  - platform: sntp
+    id: sntp_time
+    timezone: !secret timezone
+    on_time_sync:
+      then:
+        - logger.log: "SNTP time synced"
+        - pcf8563.write_time:
+            id: rtctime
+  - platform: pcf8563
+    id: rtctime
+    i2c_id: internal_i2c
+    address: 0x51
+    timezone: !secret timezone
+    update_interval: never
+  - platform: homeassistant
+    id: ha_time
+    timezone: !secret timezone
+    on_time_sync:
+      then:
+        - logger.log: "HA time synced"
+        - pcf8563.write_time:
+            id: rtctime
+
+rc522_i2c:
+  - id: nfc_reader
+    i2c_id: internal_i2c
+    address: 0x28
+    on_tag:
+      then:
+        - homeassistant.tag_scanned: !lambda 'return x;'
