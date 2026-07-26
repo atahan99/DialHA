@@ -26,6 +26,8 @@ constexpr uint32_t KEY_SOUND = 0x4D354434;     // "M5D4"
 constexpr uint32_t KEY_AC_POWER = 0x4D354435;  // "M5D5"
 constexpr uint32_t KEY_AC_TEMP = 0x4D354436;   // "M5D6"
 constexpr uint32_t KEY_AC_FAN = 0x4D354437;    // "M5D7"
+constexpr uint32_t KEY_CLOCK24 = 0x4D354438;   // "M5D8"
+constexpr uint32_t KEY_TICKNUM = 0x4D354439;   // "M5D9"
 
 // Queue a value without touching flash. Use when writing several at once.
 template<uint32_t KEY, typename T> inline void stage(T value) {

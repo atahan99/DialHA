@@ -155,7 +155,7 @@ the protocol.
 
 ## UI
 
-**Default face:** industrial Volos-style tick-ring clock (no brand wordmark). Timezone from secrets; SNTP over Wi‑Fi. Status line shows IP / `NO WIFI`. Wake opens a **six-wedge pie launcher** (amber selection): Settings, AC, Plugs, Lights, Time, Scenes. Center **HOME** returns to the clock. Idle dims the clock; **Night** (22:00–08:00) and Display-off sleep as before. **AP** / **Audio** off by default. Every sub-page has an on-screen back arrow.
+**Default face:** industrial Volos-style tick-ring clock (no brand wordmark). Timezone from secrets; SNTP over Wi‑Fi. Status line shows IP / `NO WIFI`. **Single tap** on the clock wakes the backlight; **double tap** (or the front button) opens the **six-wedge pie launcher** (amber selection): Settings, AC, Plugs, Lights, Time, Scenes. Center **HOME** returns to the clock. Idle dims the clock; **Night** (22:00–08:00) and Display-off sleep as before. **AP** / **Audio** off by default. Every sub-page has an on-screen back arrow.
 
 | Wedge | Page |
 |-------|------|

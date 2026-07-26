@@ -10,6 +10,7 @@ esphome:
     - include/wx_icons.h
     - include/tz_dst.h
     - include/settings_store.h
+    - include/timefmt.h
   platformio_options:
     board_build.flash_mode: dio
   on_boot:

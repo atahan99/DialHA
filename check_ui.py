@@ -136,6 +136,15 @@ if "ac_learning" in ac or "ir_cool_temps" in ac:
     fails.append("raw learn/replay is superseded by the synthesiser")
 if "platform: coolix" in ac:
     fails.append("Coolix is the wrong protocol for 09325 A")
+# The encoder must be able to reach every settings row.
+n_rows = len(re.findall(r"id: row_set_\w+", strip_comments(ui))) // 2
+if n_rows and f"% {n_rows};" not in ui:
+    fails.append(f"settings has {n_rows} rows but the encoder does not wrap at {n_rows}")
+if "id: set_list" not in ui or "scroll_dir: VER" not in ui:
+    fails.append("settings list should be a vertical scroll container")
+for lbl in ("lbl_clock_mon", "lbl_clock_ampm", "id: clock_scale"):
+    if lbl not in ui:
+        fails.append(f"clock face missing {lbl}")
 if "ac_commit" not in ui:
     fails.append("encoder must debounce through ac_commit, not send per detent")
 

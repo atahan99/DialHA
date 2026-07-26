@@ -1,3 +1,9 @@
+substitutions:
+  # Double-tap window on the clock face. Measured from PRESS (touch-down), not
+  # release: on_click only fires on release and adds ~300ms of variable latency.
+  # Real finger double-taps on this screen measured 600-1100ms apart.
+  clock_double_tap_ms: "900"
+
 # Volos industrial UI — 240x240 round, safe circle ~r≤100
 # Tokens: bg 0x0B0F11, text 0xF4F7F8, secondary 0x9EA7AA, amber 0xFFD400,
 #         warm 0xFF8A00, cyan 0x63E7F2, border 0x333B3E
@@ -119,6 +125,22 @@ globals:
   - id: display_rotation
     type: int
     initial_value: "180"
+  # Double-tap detection for the clock face. LVGL's own DOUBLE_CLICKED needs
+  # both taps within scroll_limit (10px) and long_press_time (400ms), which is
+  # unrealistic for a finger; this uses time only, with a wider window.
+  - id: clock_tap_ms
+    type: uint32_t
+    initial_value: "0"
+  - id: clock_tap_dbl
+    type: bool
+    initial_value: "false"
+  # Clock face options (persisted via settings_store.h)
+  - id: clock_24h
+    type: bool
+    initial_value: "true"
+  - id: ring_numerals
+    type: bool
+    initial_value: "true"
   # AC dial target: 0=temp 1=fan 2=swing
   - id: ac_focus
     type: int
@@ -247,6 +269,35 @@ script:
                                   else:
                                     - script.execute: open_scenes
 
+  # Touch on the clock face wakes the backlight but stays put; a double tap is
+  # what opens the launcher. Idle (45s) drops back to the dim level.
+  - id: clock_tap
+    then:
+      - lambda: |-
+          uint32_t now = millis();
+          uint32_t dt = now - id(clock_tap_ms);
+          id(clock_tap_dbl) = (id(clock_tap_ms) != 0) && (dt < ${clock_double_tap_ms});
+          id(clock_tap_ms) = id(clock_tap_dbl) ? 0 : now;
+          // Bump the logger to DEBUG to retune ${clock_double_tap_ms}
+          ESP_LOGD("ui", "clock tap dt=%ums double=%d", (unsigned) dt,
+                   (int) id(clock_tap_dbl));
+      - if:
+          condition:
+            lambda: "return id(clock_tap_dbl);"
+          then:
+            - script.execute: wake_to_launcher
+          else:
+            - script.execute: clock_wake_bright
+
+  - id: clock_wake_bright
+    then:
+      - lambda: |-
+          id(display_asleep) = false;
+          id(screen_forced_off) = false;
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+
   - id: wake_to_launcher
     then:
       - lambda: |-
@@ -304,7 +355,7 @@ script:
               - lambda: "return id(display_asleep);"
               - lvgl.page.is_showing: page_clock
           then:
-            - script.execute: wake_to_launcher
+            - script.execute: clock_wake_bright
 
   - id: front_action
     then:
@@ -358,7 +409,7 @@ script:
           condition:
             lvgl.page.is_showing: page_settings
           then:
-            - lambda: "id(settings_index) = (id(settings_index) + 1) % 6;"
+            - lambda: "id(settings_index) = (id(settings_index) + 1) % 8;"
             - script.execute: apply_settings_focus
       - if:
           condition:
@@ -419,7 +470,7 @@ script:
           condition:
             lvgl.page.is_showing: page_settings
           then:
-            - lambda: "id(settings_index) = (id(settings_index) + 5) % 6;"
+            - lambda: "id(settings_index) = (id(settings_index) + 7) % 8;"
             - script.execute: apply_settings_focus
       - if:
           condition:
@@ -518,6 +569,26 @@ script:
       - lvgl.page.show: page_settings
       - script.execute: settings_refresh
 
+  - id: apply_ring_numerals
+    then:
+      - lambda: |-
+          // The scale draws a label per major tick (0,5..60 -> 13 of them).
+          // Supply zero-padded text and blank the 13th, which sits on top of
+          // the first at 12 o'clock.
+          // Not `const char *const[]` — lv_scale_set_text_src takes char**
+          static const char *TICKS[] = {
+            "00", "05", "10", "15", "20", "25", "30",
+            "35", "40", "45", "50", "55", "", nullptr};
+          lv_scale_set_text_src(id(clock_scale), TICKS);
+          lv_scale_set_label_show(id(clock_scale), id(ring_numerals));
+          // ESPHome styles the tick lines but not the label text: without this
+          // the numerals render in the theme default colour and vanish on black.
+          lv_obj_set_style_text_color(id(clock_scale), lv_color_hex(0x9EA7AA),
+                                      LV_PART_INDICATOR);
+          lv_obj_set_style_text_font(id(clock_scale), id(font_label),
+                                     LV_PART_INDICATOR);
+          lv_obj_invalidate(id(clock_meter));
+
   - id: apply_display_rotation
     then:
       - lvgl.display.set_rotation:
@@ -538,6 +609,17 @@ script:
             char buf[8];
             snprintf(buf, sizeof(buf), "%d°", id(display_rotation));
             return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_set_clock_val
+          text: !lambda |-
+            return std::string(id(clock_24h) ? "24H" : "12H");
+      - lvgl.label.update:
+          id: lbl_set_ticks_val
+          text: !lambda |-
+            return std::string(id(ring_numerals) ? "ON" : "OFF");
+      - lvgl.label.update:
+          id: lbl_set_disp_val
+          text: "OFF"
       - lvgl.label.update:
           id: lbl_set_net_val
           text: !lambda |-
@@ -570,70 +652,89 @@ script:
           id: row_set_rotate
           border_color: !lambda "return id(settings_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
       - lvgl.widget.update:
-          id: row_set_network
+          id: row_set_clock
           border_color: !lambda "return id(settings_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
       - lvgl.widget.update:
-          id: row_set_audio
+          id: row_set_ticks
           border_color: !lambda "return id(settings_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
       - lvgl.widget.update:
-          id: row_set_night
+          id: row_set_network
           border_color: !lambda "return id(settings_index) == 4 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
       - lvgl.widget.update:
-          id: row_set_ap
+          id: row_set_audio
           border_color: !lambda "return id(settings_index) == 5 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
+      - lvgl.widget.update:
+          id: row_set_night
+          border_color: !lambda "return id(settings_index) == 6 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
+      - lvgl.widget.update:
+          id: row_set_ap
+          border_color: !lambda "return id(settings_index) == 7 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
+      # Keep the focused row visible in the scrolling container
+      - lambda: |-
+          lv_obj_t *rows[] = {id(row_set_display), id(row_set_rotate), id(row_set_clock), id(row_set_ticks), id(row_set_network), id(row_set_audio), id(row_set_night), id(row_set_ap)};
+          int i = id(settings_index);
+          if (i >= 0 && i < 8)
+            lv_obj_scroll_to_view(rows[i], LV_ANIM_ON);
 
   - id: settings_activate
     then:
+      # 0 Display  1 Rotate  2 Clock  3 Dial nums  4 Network  5 Audio  6 Night  7 AP
       - if:
           condition:
             lambda: "return id(settings_index) == 0;"
           then:
             - lambda: "id(screen_forced_off) = true;"
             - script.execute: screen_sleep
-          else:
-            - if:
-                condition:
-                  lambda: "return id(settings_index) == 1;"
-                then:
-                  - lambda: |-
-                      id(display_rotation) = (id(display_rotation) + 90) % 360;
-                      m5dial::store_now<m5dial::KEY_ROTATION>(id(display_rotation));
-                  - script.execute: apply_display_rotation
-                  - script.execute: settings_refresh
-                  - script.execute:
-                      id: ui_beep
-                      tune: "ok:d=32,o=5,b=180:e"
-                else:
-                  - if:
-                      condition:
-                        lambda: "return id(settings_index) == 3;"
-                      then:
-                        - lambda: |-
-                            id(ui_sound_enabled) = !id(ui_sound_enabled);
-                            m5dial::store_now<m5dial::KEY_SOUND>(id(ui_sound_enabled));
-                        - script.execute: settings_refresh
-                        - script.execute:
-                            id: ui_beep
-                            tune: "ok:d=32,o=5,b=180:e"
-                      else:
-                        - if:
-                            condition:
-                              lambda: "return id(settings_index) == 4;"
-                            then:
-                              - lambda: |-
-                                  id(night_mode_enabled) = !id(night_mode_enabled);
-                                  m5dial::store_now<m5dial::KEY_NIGHT>(id(night_mode_enabled));
-                              - script.execute: settings_refresh
-                            else:
-                              - if:
-                                  condition:
-                                    lambda: "return id(settings_index) == 5;"
-                                  then:
-                                    - lambda: |-
-                                        id(fallback_ap_enabled) = !id(fallback_ap_enabled);
-                                        m5dial::store_now<m5dial::KEY_AP>(id(fallback_ap_enabled));
-                                    - script.execute: apply_fallback_ap
-                                    - script.execute: settings_refresh
+      - if:
+          condition:
+            lambda: "return id(settings_index) == 1;"
+          then:
+            - lambda: |-
+                id(display_rotation) = (id(display_rotation) + 90) % 360;
+                m5dial::store_now<m5dial::KEY_ROTATION>(id(display_rotation));
+            - script.execute: apply_display_rotation
+      - if:
+          condition:
+            lambda: "return id(settings_index) == 2;"
+          then:
+            - lambda: |-
+                id(clock_24h) = !id(clock_24h);
+                m5dial::store_now<m5dial::KEY_CLOCK24>(id(clock_24h));
+      - if:
+          condition:
+            lambda: "return id(settings_index) == 3;"
+          then:
+            - lambda: |-
+                id(ring_numerals) = !id(ring_numerals);
+                m5dial::store_now<m5dial::KEY_TICKNUM>(id(ring_numerals));
+            - script.execute: apply_ring_numerals
+      - if:
+          condition:
+            lambda: "return id(settings_index) == 5;"
+          then:
+            - lambda: |-
+                id(ui_sound_enabled) = !id(ui_sound_enabled);
+                m5dial::store_now<m5dial::KEY_SOUND>(id(ui_sound_enabled));
+      - if:
+          condition:
+            lambda: "return id(settings_index) == 6;"
+          then:
+            - lambda: |-
+                id(night_mode_enabled) = !id(night_mode_enabled);
+                m5dial::store_now<m5dial::KEY_NIGHT>(id(night_mode_enabled));
+      - if:
+          condition:
+            lambda: "return id(settings_index) == 7;"
+          then:
+            - lambda: |-
+                id(fallback_ap_enabled) = !id(fallback_ap_enabled);
+                m5dial::store_now<m5dial::KEY_AP>(id(fallback_ap_enabled));
+            - script.execute: apply_fallback_ap
+      # Row 4 (Network) is read-only
+      - script.execute: settings_refresh
+      - script.execute:
+          id: ui_beep
+          tune: "ok:d=32,o=5,b=180:e"
 
   - id: light_apply_bri
     parameters:
@@ -1176,7 +1277,8 @@ lvgl:
             indicator:
               bg_opa: TRANSP
             scales:
-              - range_from: 0
+              - id: clock_scale
+                range_from: 0
                 range_to: 60
                 angle_range: 360
                 rotation: 90
@@ -1216,14 +1318,14 @@ lvgl:
             text_font: font_big
             text: "--"
         - label:
-            id: lbl_clock_daytag
+            id: lbl_clock_mon
             styles: st_text
             align: CENTER
             x: 48
             y: -52
             text_font: font_label
             text_color: 0x63E7F2
-            text: "DAY"
+            text: "---"
         - label:
             id: lbl_clock_main
             styles: st_text
@@ -1231,6 +1333,14 @@ lvgl:
             y: 12
             text_font: font_clock
             text: "--:--"
+        - label:
+            id: lbl_clock_ampm
+            styles: st_text
+            align: CENTER
+            y: 52
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: ""
         - button:
             id: btn_clock_wake
             align: CENTER
@@ -1239,8 +1349,12 @@ lvgl:
             bg_opa: TRANSP
             shadow_opa: TRANSP
             border_width: 0
-            on_click:
-              - script.execute: wake_to_launcher
+            # Double tap opens the launcher, detected in clock_tap from click
+            # timing alone. LVGL's own DOUBLE_CLICKED is logged for reference
+            # but not used: it also requires both taps within scroll_limit
+            # (10px), which a finger rarely satisfies.
+            on_press:
+              - script.execute: clock_tap
 
     # —— Pie launcher (6 wedges + Home) ——
     - id: page_launcher
@@ -2295,9 +2409,9 @@ lvgl:
         - arc:
             id: arc_pomo
             align: CENTER
-            y: -14
-            width: 158
-            height: 158
+            y: -10
+            width: 140
+            height: 140
             min_value: 0
             max_value: 100
             value: 100
@@ -2460,9 +2574,9 @@ lvgl:
         - arc:
             id: arc_timer
             align: CENTER
-            y: -14
-            width: 158
-            height: 158
+            y: -10
+            width: 140
+            height: 140
             min_value: 0
             max_value: 100
             value: 100
@@ -2751,7 +2865,10 @@ lvgl:
                   text_color: 0x9EA7AA
             on_click:
               - script.execute: nav_back
-    # —— Settings list ——
+    # —— Settings: vertically scrollable list ——
+    # Rows live in a scrolling container so the count can grow past the glass;
+    # the container corners stay inside r=114 while its children are clipped
+    # to it, so the round-display budget only has to hold for the container.
     - id: page_settings
       styles: st_bg
       widgets:
@@ -2762,203 +2879,282 @@ lvgl:
             text_font: font_label
             text_color: 0x9EA7AA
             text: "SETTINGS"
-        - button:
-            id: row_set_display
-            styles: st_row
-            width: 152
-            height: 24
+        - obj:
+            id: set_list
             align: CENTER
-            y: -72
-            border_color: 0xFFD400
-            group: dial_group
+            y: -4
+            width: 164
+            height: 148
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scroll_dir: VER
+            scrollbar_mode: AUTO
             widgets:
-              - label:
-                  text: "\U000F00DF"
-                  align: LEFT_MID
-                  x: 8
-                  text_font: font_icon
-                  text_color: 0x63E7F2
-              - label:
-                  text: "Display"
-                  align: LEFT_MID
-                  x: 30
-                  text_font: font_label
-              - label:
-                  text: "OFF"
-                  align: RIGHT_MID
-                  x: -8
-                  text_font: font_label
-                  text_color: 0x9EA7AA
-            on_press:
-              - lambda: "id(settings_index) = 0;"
-              - script.execute: apply_settings_focus
-            on_click:
-              - lambda: "id(settings_index) = 0;"
-              - script.execute: settings_activate
-        - button:
-            id: row_set_rotate
-            styles: st_row
-            width: 188
-            height: 24
-            align: CENTER
-            y: -44
-            group: dial_group
-            widgets:
-              - label:
-                  text: "\U000F0467"
-                  align: LEFT_MID
-                  x: 8
-                  text_font: font_icon
-                  text_color: 0x63E7F2
-              - label:
-                  text: "Rotate"
-                  align: LEFT_MID
-                  x: 30
-                  text_font: font_label
-              - label:
-                  id: lbl_set_rotate_val
-                  text: "180°"
-                  align: RIGHT_MID
-                  x: -8
-                  text_font: font_label
-                  text_color: 0x9EA7AA
-            on_press:
-              - lambda: "id(settings_index) = 1;"
-              - script.execute: apply_settings_focus
-            on_click:
-              - lambda: "id(settings_index) = 1;"
-              - script.execute: settings_activate
-        - button:
-            id: row_set_network
-            styles: st_row
-            width: 188
-            height: 24
-            align: CENTER
-            y: -16
-            group: dial_group
-            widgets:
-              - label:
-                  text: "\U000F05A9"
-                  align: LEFT_MID
-                  x: 8
-                  text_font: font_icon
-                  text_color: 0x63E7F2
-              - label:
-                  text: "Network"
-                  align: LEFT_MID
-                  x: 30
-                  text_font: font_label
-              - label:
-                  id: lbl_set_net_val
-                  text: "..."
-                  align: RIGHT_MID
-                  x: -8
-                  text_font: font_label
-                  text_color: 0x9EA7AA
-            on_press:
-              - lambda: "id(settings_index) = 2;"
-              - script.execute: apply_settings_focus
-            on_click:
-              - lambda: "id(settings_index) = 2;"
-        - button:
-            id: row_set_audio
-            styles: st_row
-            width: 188
-            height: 24
-            align: CENTER
-            y: 12
-            group: dial_group
-            widgets:
-              - label:
-                  text: "\U000F057E"
-                  align: LEFT_MID
-                  x: 8
-                  text_font: font_icon
-                  text_color: 0x63E7F2
-              - label:
-                  text: "Audio"
-                  align: LEFT_MID
-                  x: 30
-                  text_font: font_label
-              - label:
-                  id: lbl_set_audio_val
-                  text: "OFF"
-                  align: RIGHT_MID
-                  x: -8
-                  text_font: font_label
-                  text_color: 0x9EA7AA
-            on_press:
-              - lambda: "id(settings_index) = 3;"
-              - script.execute: apply_settings_focus
-            on_click:
-              - lambda: "id(settings_index) = 3;"
-              - script.execute: settings_activate
-        - button:
-            id: row_set_night
-            styles: st_row
-            width: 188
-            height: 24
-            align: CENTER
-            y: 40
-            group: dial_group
-            widgets:
-              - label:
-                  text: "\U000F0594"
-                  align: LEFT_MID
-                  x: 8
-                  text_font: font_icon
-                  text_color: 0x63E7F2
-              - label:
-                  text: "Night"
-                  align: LEFT_MID
-                  x: 30
-                  text_font: font_label
-              - label:
-                  id: lbl_set_night_val
-                  text: "OFF"
-                  align: RIGHT_MID
-                  x: -8
-                  text_font: font_label
-                  text_color: 0x9EA7AA
-            on_press:
-              - lambda: "id(settings_index) = 4;"
-              - script.execute: apply_settings_focus
-            on_click:
-              - lambda: "id(settings_index) = 4;"
-              - script.execute: settings_activate
-        - button:
-            id: row_set_ap
-            styles: st_row
-            width: 152
-            height: 24
-            align: CENTER
-            y: 68
-            group: dial_group
-            widgets:
-              - label:
-                  text: "\U000F0003"
-                  align: LEFT_MID
-                  x: 8
-                  text_font: font_icon
-                  text_color: 0x63E7F2
-              - label:
-                  text: "AP Fallback"
-                  align: LEFT_MID
-                  x: 30
-                  text_font: font_label
-              - label:
-                  id: lbl_set_ap_val
-                  text: "OFF"
-                  align: RIGHT_MID
-                  x: -8
-                  text_font: font_label
-                  text_color: 0x9EA7AA
-            on_press:
-              - lambda: "id(settings_index) = 5;"
-              - script.execute: apply_settings_focus
-            on_click:
-              - lambda: "id(settings_index) = 5;"
-              - script.execute: settings_activate
+              - button:
+                  id: row_set_display
+                  styles: st_row
+                  width: 156
+                  height: 26
+                  align: TOP_MID
+                  y: 0
+                  group: dial_group
+                  widgets:
+                    - label:
+                        text: "\U000F00DF"
+                        align: LEFT_MID
+                        x: 6
+                        text_font: font_icon
+                        text_color: 0x63E7F2
+                    - label:
+                        text: "Display"
+                        align: LEFT_MID
+                        x: 28
+                        text_font: font_label
+                    - label:
+                        id: lbl_set_disp_val
+                        text: "OFF"
+                        align: RIGHT_MID
+                        x: -6
+                        text_font: font_label
+                        text_color: 0x9EA7AA
+                  on_press:
+                    - lambda: "id(settings_index) = 0;"
+                    - script.execute: apply_settings_focus
+                  on_click:
+                    - lambda: "id(settings_index) = 0;"
+                    - script.execute: settings_activate
+              - button:
+                  id: row_set_rotate
+                  styles: st_row
+                  width: 156
+                  height: 26
+                  align: TOP_MID
+                  y: 30
+                  group: dial_group
+                  widgets:
+                    - label:
+                        text: "\U000F0467"
+                        align: LEFT_MID
+                        x: 6
+                        text_font: font_icon
+                        text_color: 0x63E7F2
+                    - label:
+                        text: "Rotate"
+                        align: LEFT_MID
+                        x: 28
+                        text_font: font_label
+                    - label:
+                        id: lbl_set_rotate_val
+                        text: "180°"
+                        align: RIGHT_MID
+                        x: -6
+                        text_font: font_label
+                        text_color: 0x9EA7AA
+                  on_press:
+                    - lambda: "id(settings_index) = 1;"
+                    - script.execute: apply_settings_focus
+                  on_click:
+                    - lambda: "id(settings_index) = 1;"
+                    - script.execute: settings_activate
+              - button:
+                  id: row_set_clock
+                  styles: st_row
+                  width: 156
+                  height: 26
+                  align: TOP_MID
+                  y: 60
+                  group: dial_group
+                  widgets:
+                    - label:
+                        text: "\U000F0150"
+                        align: LEFT_MID
+                        x: 6
+                        text_font: font_icon
+                        text_color: 0x63E7F2
+                    - label:
+                        text: "Clock"
+                        align: LEFT_MID
+                        x: 28
+                        text_font: font_label
+                    - label:
+                        id: lbl_set_clock_val
+                        text: "24H"
+                        align: RIGHT_MID
+                        x: -6
+                        text_font: font_label
+                        text_color: 0x9EA7AA
+                  on_press:
+                    - lambda: "id(settings_index) = 2;"
+                    - script.execute: apply_settings_focus
+                  on_click:
+                    - lambda: "id(settings_index) = 2;"
+                    - script.execute: settings_activate
+              - button:
+                  id: row_set_ticks
+                  styles: st_row
+                  width: 156
+                  height: 26
+                  align: TOP_MID
+                  y: 90
+                  group: dial_group
+                  widgets:
+                    - label:
+                        text: "\U000F0599"
+                        align: LEFT_MID
+                        x: 6
+                        text_font: font_icon
+                        text_color: 0x63E7F2
+                    - label:
+                        text: "Dial nums"
+                        align: LEFT_MID
+                        x: 28
+                        text_font: font_label
+                    - label:
+                        id: lbl_set_ticks_val
+                        text: "ON"
+                        align: RIGHT_MID
+                        x: -6
+                        text_font: font_label
+                        text_color: 0x9EA7AA
+                  on_press:
+                    - lambda: "id(settings_index) = 3;"
+                    - script.execute: apply_settings_focus
+                  on_click:
+                    - lambda: "id(settings_index) = 3;"
+                    - script.execute: settings_activate
+              - button:
+                  id: row_set_network
+                  styles: st_row
+                  width: 156
+                  height: 26
+                  align: TOP_MID
+                  y: 120
+                  group: dial_group
+                  widgets:
+                    - label:
+                        text: "\U000F05A9"
+                        align: LEFT_MID
+                        x: 6
+                        text_font: font_icon
+                        text_color: 0x63E7F2
+                    - label:
+                        text: "Net"
+                        align: LEFT_MID
+                        x: 28
+                        text_font: font_label
+                    - label:
+                        id: lbl_set_net_val
+                        text: "..."
+                        align: RIGHT_MID
+                        x: -6
+                        text_font: font_label
+                        text_color: 0x9EA7AA
+                  on_press:
+                    - lambda: "id(settings_index) = 4;"
+                    - script.execute: apply_settings_focus
+                  on_click:
+                    - lambda: "id(settings_index) = 4;"
+                    - script.execute: settings_activate
+              - button:
+                  id: row_set_audio
+                  styles: st_row
+                  width: 156
+                  height: 26
+                  align: TOP_MID
+                  y: 150
+                  group: dial_group
+                  widgets:
+                    - label:
+                        text: "\U000F057E"
+                        align: LEFT_MID
+                        x: 6
+                        text_font: font_icon
+                        text_color: 0x63E7F2
+                    - label:
+                        text: "Audio"
+                        align: LEFT_MID
+                        x: 28
+                        text_font: font_label
+                    - label:
+                        id: lbl_set_audio_val
+                        text: "OFF"
+                        align: RIGHT_MID
+                        x: -6
+                        text_font: font_label
+                        text_color: 0x9EA7AA
+                  on_press:
+                    - lambda: "id(settings_index) = 5;"
+                    - script.execute: apply_settings_focus
+                  on_click:
+                    - lambda: "id(settings_index) = 5;"
+                    - script.execute: settings_activate
+              - button:
+                  id: row_set_night
+                  styles: st_row
+                  width: 156
+                  height: 26
+                  align: TOP_MID
+                  y: 180
+                  group: dial_group
+                  widgets:
+                    - label:
+                        text: "\U000F0594"
+                        align: LEFT_MID
+                        x: 6
+                        text_font: font_icon
+                        text_color: 0x63E7F2
+                    - label:
+                        text: "Night"
+                        align: LEFT_MID
+                        x: 28
+                        text_font: font_label
+                    - label:
+                        id: lbl_set_night_val
+                        text: "OFF"
+                        align: RIGHT_MID
+                        x: -6
+                        text_font: font_label
+                        text_color: 0x9EA7AA
+                  on_press:
+                    - lambda: "id(settings_index) = 6;"
+                    - script.execute: apply_settings_focus
+                  on_click:
+                    - lambda: "id(settings_index) = 6;"
+                    - script.execute: settings_activate
+              - button:
+                  id: row_set_ap
+                  styles: st_row
+                  width: 156
+                  height: 26
+                  align: TOP_MID
+                  y: 210
+                  group: dial_group
+                  widgets:
+                    - label:
+                        text: "\U000F0003"
+                        align: LEFT_MID
+                        x: 6
+                        text_font: font_icon
+                        text_color: 0x63E7F2
+                    - label:
+                        text: "AP"
+                        align: LEFT_MID
+                        x: 28
+                        text_font: font_label
+                    - label:
+                        id: lbl_set_ap_val
+                        text: "OFF"
+                        align: RIGHT_MID
+                        x: -6
+                        text_font: font_label
+                        text_color: 0x9EA7AA
+                  on_press:
+                    - lambda: "id(settings_index) = 7;"
+                    - script.execute: apply_settings_focus
+                  on_click:
+                    - lambda: "id(settings_index) = 7;"
+                    - script.execute: settings_activate
         - button:
             id: btn_back_settings
             styles: st_chip
@@ -2974,7 +3170,6 @@ lvgl:
                   text_color: 0x9EA7AA
             on_click:
               - script.execute: nav_back
-
   on_boot:
     - delay: 500ms
     # Settings persist via include/settings_store.h (immediate NVS write), so
@@ -2987,8 +3182,11 @@ lvgl:
         id(ac_power) = m5dial::load_or<m5dial::KEY_AC_POWER>(false);
         id(ac_temp) = m5dial::load_or<m5dial::KEY_AC_TEMP>(24);
         id(ac_fan) = m5dial::load_or<m5dial::KEY_AC_FAN>(0);
+        id(clock_24h) = m5dial::load_or<m5dial::KEY_CLOCK24>(true);
+        id(ring_numerals) = m5dial::load_or<m5dial::KEY_TICKNUM>(true);
     - script.execute: apply_fallback_ap
     - script.execute: apply_display_rotation
+    - script.execute: apply_ring_numerals
     - light.turn_on:
         id: display_backlight
         brightness: 40%
