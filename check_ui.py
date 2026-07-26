@@ -110,8 +110,28 @@ if "0x88C0051" not in ac:
 if "sum & 0xF" not in ac:
     fails.append("Arcelik checksum (sum of first six nibbles) missing")
 for gid in ("ac_power", "ac_temp", "ac_fan"):
-    if f"id: {gid}" not in ac or "restore_value: true" not in ac:
-        fails.append(f"AC state global {gid} must persist across reboot")
+    if f"id: {gid}" not in ac:
+        fails.append(f"AC state global {gid} missing")
+# Settings must survive an immediate power cut, so they persist through
+# settings_store.h rather than restore_value (which only stages on a 1 Hz poll).
+def strip_comments(text: str) -> str:
+    """Drop whole-line YAML comments so prose about a setting isn't mistaken for it."""
+    return "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+
+
+if "restore_value" in strip_comments(ac):
+    fails.append("ac.yaml should persist via settings_store.h, not restore_value")
+if "id: ac_persist" not in ac or "m5dial::commit()" not in ac:
+    fails.append("ac.yaml missing the ac_persist script")
+store = (ROOT / "include" / "settings_store.h").read_text()
+for key in ("KEY_ROTATION", "KEY_NIGHT", "KEY_AP", "KEY_SOUND",
+            "KEY_AC_POWER", "KEY_AC_TEMP", "KEY_AC_FAN"):
+    if key not in store:
+        fails.append(f"settings_store.h missing {key}")
+    if key not in ui and key not in ac:
+        fails.append(f"{key} is defined but never used")
+if "restore_value: true" in strip_comments(ui):
+    fails.append("ui.yaml globals should persist via settings_store.h")
 if "ac_learning" in ac or "ir_cool_temps" in ac:
     fails.append("raw learn/replay is superseded by the synthesiser")
 if "platform: coolix" in ac:

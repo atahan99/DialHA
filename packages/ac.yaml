@@ -93,27 +93,36 @@ remote_receiver:
             }
           }
           ESP_LOGI("ac", "remote: ON %dC fan=%d", id(ac_temp), id(ac_fan));
+      - script.execute: ac_persist
       - script.execute: ac_refresh
 
 globals:
+  # Persisted through include/settings_store.h rather than restore_value, so a
+  # change survives an immediate power cut (see the note in README "Settings
+  # persistence"). Loaded in the lvgl on_boot block in ui.yaml.
   - id: ac_power
     type: bool
-    restore_value: true
     initial_value: "false"
   - id: ac_temp
     type: int
-    restore_value: true
     initial_value: "24"
   # 0 = AUTO, 1..5 = fan bars
   - id: ac_fan
     type: int
-    restore_value: true
     initial_value: "0"
   - id: ac_rx_guard
     type: uint32_t
     initial_value: "0"
 
 script:
+  - id: ac_persist
+    then:
+      - lambda: |-
+          m5dial::stage<m5dial::KEY_AC_POWER>(id(ac_power));
+          m5dial::stage<m5dial::KEY_AC_TEMP>(id(ac_temp));
+          m5dial::stage<m5dial::KEY_AC_FAN>(id(ac_fan));
+          m5dial::commit();
+
   # Expand a 28-bit code into Arçelik raw timings and send it.
   - id: ac_tx_code
     parameters:
@@ -177,6 +186,7 @@ script:
       - script.execute:
           id: ac_tx_state
           n3: 0
+      - script.execute: ac_persist
       - script.execute: ac_refresh
 
   - id: ac_power_off
@@ -185,6 +195,7 @@ script:
       - script.execute:
           id: ac_tx_code
           code: 0x88C0051
+      - script.execute: ac_persist
       - script.execute: ac_refresh
 
   - id: ac_power_toggle
@@ -209,6 +220,7 @@ script:
             - script.execute:
                 id: ac_tx_state
                 n3: 8
+            - script.execute: ac_persist
           else:
             # Adjusting while off implies "turn on with these settings"
             - script.execute: ac_power_on

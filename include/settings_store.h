@@ -23,11 +23,23 @@ constexpr uint32_t KEY_ROTATION = 0x4D354431;  // "M5D1"
 constexpr uint32_t KEY_NIGHT = 0x4D354432;     // "M5D2"
 constexpr uint32_t KEY_AP = 0x4D354433;        // "M5D3"
 constexpr uint32_t KEY_SOUND = 0x4D354434;     // "M5D4"
+constexpr uint32_t KEY_AC_POWER = 0x4D354435;  // "M5D5"
+constexpr uint32_t KEY_AC_TEMP = 0x4D354436;   // "M5D6"
+constexpr uint32_t KEY_AC_FAN = 0x4D354437;    // "M5D7"
 
-template<uint32_t KEY, typename T> inline void store_now(T value) {
+// Queue a value without touching flash. Use when writing several at once.
+template<uint32_t KEY, typename T> inline void stage(T value) {
   static esphome::ESPPreferenceObject pref = esphome::global_preferences->make_preference<T>(KEY);
   pref.save(&value);
-  esphome::global_preferences->sync();
+}
+
+// Flush everything staged. sync() skips blobs whose contents are unchanged,
+// so calling this on every AC adjustment does not churn the flash.
+inline void commit() { esphome::global_preferences->sync(); }
+
+template<uint32_t KEY, typename T> inline void store_now(T value) {
+  stage<KEY>(value);
+  commit();
 }
 
 template<uint32_t KEY, typename T> inline T load_or(T fallback) {

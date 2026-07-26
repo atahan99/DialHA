@@ -2984,6 +2984,9 @@ lvgl:
         id(night_mode_enabled) = m5dial::load_or<m5dial::KEY_NIGHT>(false);
         id(fallback_ap_enabled) = m5dial::load_or<m5dial::KEY_AP>(false);
         id(ui_sound_enabled) = m5dial::load_or<m5dial::KEY_SOUND>(false);
+        id(ac_power) = m5dial::load_or<m5dial::KEY_AC_POWER>(false);
+        id(ac_temp) = m5dial::load_or<m5dial::KEY_AC_TEMP>(24);
+        id(ac_fan) = m5dial::load_or<m5dial::KEY_AC_FAN>(0);
     - script.execute: apply_fallback_ap
     - script.execute: apply_display_rotation
     - light.turn_on:
