@@ -70,10 +70,27 @@ interval:
                   auto t = id(sntp_time).now();
                   if (!t.is_valid()) t = id(ha_time).now();
                   if (!t.is_valid()) t = id(rtctime).now();
-                  char buf[16];
                   if (!t.is_valid()) return std::string("--:--");
-                  snprintf(buf, sizeof(buf), "%02d:%02d", t.hour, t.minute);
+                  char buf[16];
+                  fmt_hhmm(buf, sizeof(buf), t.hour, t.minute, id(clock_24h));
                   return std::string(buf);
+            - lvgl.label.update:
+                id: lbl_clock_ampm
+                text: !lambda |-
+                  if (id(clock_24h)) return std::string("");
+                  auto t = id(sntp_time).now();
+                  if (!t.is_valid()) t = id(ha_time).now();
+                  if (!t.is_valid()) t = id(rtctime).now();
+                  if (!t.is_valid()) return std::string("");
+                  return std::string(ampm_of(t.hour));
+            - lvgl.label.update:
+                id: lbl_clock_mon
+                text: !lambda |-
+                  auto t = id(sntp_time).now();
+                  if (!t.is_valid()) t = id(ha_time).now();
+                  if (!t.is_valid()) t = id(rtctime).now();
+                  if (!t.is_valid()) return std::string("---");
+                  return std::string(month_abbr(t.month));
             - lvgl.label.update:
                 id: lbl_clock_dow
                 text: !lambda |-
@@ -168,7 +185,7 @@ script:
             if (!t.is_valid()) t = id(rtctime).now();
             if (!t.is_valid()) return std::string("--:--");
             char buf[16];
-            snprintf(buf, sizeof(buf), "%02d:%02d", t.hour, t.minute);
+            fmt_hhmm(buf, sizeof(buf), t.hour, t.minute, id(clock_24h));
             return std::string(buf);
 
   - id: time_hub_focus
@@ -297,7 +314,11 @@ script:
             }
             int h = (uh + offs[i] + dst_offset(rules[i], uy, um, ud) + 48) % 24;
             char buf[16];
-            snprintf(buf, sizeof(buf), "%02d:%02d", h, t.minute);
+            fmt_hhmm(buf, sizeof(buf), h, t.minute, id(clock_24h));
+            if (!id(clock_24h)) {
+              size_t n = strlen(buf);
+              snprintf(buf + n, sizeof(buf) - n, " %s", ampm_of(h));
+            }
             return std::string(buf);
       - lvgl.label.update:
           id: lbl_city_name
@@ -420,9 +441,14 @@ script:
       - lvgl.label.update:
           id: lbl_timer_time
           text: !lambda |-
+            // Hours only when there are any: "00:05:00" is wider than the
+            // arc's inner circle, "05:00" is not.
             int t = id(timer_remain);
             char buf[16];
-            snprintf(buf, sizeof(buf), "%02d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60);
+            if (t >= 3600)
+              snprintf(buf, sizeof(buf), "%d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60);
+            else
+              snprintf(buf, sizeof(buf), "%02d:%02d", (t / 60) % 60, t % 60);
             return std::string(buf);
           text_color: !lambda |-
             return id(timer_running) ? lv_color_hex(0x63E7F2) : lv_color_hex(0xF4F7F8);
