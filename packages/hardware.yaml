@@ -51,6 +51,11 @@ touchscreen:
     # garbage when idle, which floods the log with "Failed to read status".
     # With the IRQ attached ESPHome stops the poller and only reads on a touch.
     interrupt_pin: GPIO14
+    # Required *because* of the IRQ above. ft5x06 leaves touch_timeout at 0, so
+    # a held finger is sampled once and never again -- ESPHome uses this timer
+    # both to track movement and to notice the release. Only armed while a
+    # touch is active, so the idle log spam does not come back.
+    touch_timeout: 20ms
 
 sensor:
   - platform: rotary_encoder
