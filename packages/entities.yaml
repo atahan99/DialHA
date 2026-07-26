@@ -1,0 +1,155 @@
+# HA entity IDs + Dial labels + world-clock cities (committed; not secret)
+# From HA → Settings → Devices & services → Entities
+substitutions:
+  # light.* only here (brightness / light.toggle)
+  light_1_entity: light.bedroom_bookshelf
+  light_1_name: "Bookshelf"
+  light_2_entity: light.desk_desk
+  light_2_name: "Desk"
+  light_3_entity: light.bedroom_station
+  light_3_name: "Station RGB"
+  light_4_entity: light.desk_monitor
+  light_4_name: "Monitor"
+
+  # switch.* — 8 slots, 4 visible per page (horizontal page flip on Dial)
+  plug_count: "6"
+  plug_1_entity: switch.p110c
+  plug_1_name: "P110C"
+  plug_2_entity: switch.2k_monitor
+  plug_2_name: "2K Mon"
+  plug_3_entity: switch.4k_monitor
+  plug_3_name: "4K Mon"
+  plug_4_entity: switch.plugneon
+  plug_4_name: "Neon"
+  plug_5_entity: switch.main_light_main_light
+  plug_5_name: "Main"
+  plug_6_entity: switch.p115_salt_2
+  plug_6_name: "Salt"
+  # unused slots (kept so firmware arrays stay size 8)
+  plug_7_entity: switch.none
+  plug_7_name: "—"
+  plug_8_entity: switch.none
+  plug_8_name: "—"
+
+  plug_1_power_entity: sensor.none
+  plug_2_power_entity: sensor.none
+  plug_3_power_entity: sensor.none
+  plug_4_power_entity: sensor.none
+  plug_5_power_entity: sensor.none
+  plug_6_power_entity: sensor.none
+  plug_7_power_entity: sensor.none
+  plug_8_power_entity: sensor.none
+
+  scene_1_entity: scene.l_rgb
+  scene_1_name: "L RGB"
+  scene_2_entity: scene.my_room_tokyo
+  scene_2_name: "Tokyo"
+  scene_3_entity: scene.my_room_bright
+  scene_3_name: "Bright"
+  scene_4_entity: scene.my_room_dimmed
+  scene_4_name: "Dimmed"
+
+  # World-clock cities (edit freely). Offsets are hours from UTC.
+  # home_utc_offset MUST match secrets.yaml timezone (Europe/Istanbul → 3).
+  home_utc_offset: "3"
+  home_dst: "0"
+  # *_utc_offset is STANDARD time; *_dst picks the rule that adds the summer
+  # hour: 0 = none, 1 = EU (last Sun Mar..last Sun Oct), 2 = US/CA (2nd Sun
+  # Mar..1st Sun Nov). Verified against tzdata for a full year.
+  city_1_name: "Istanbul"
+  city_1_utc_offset: "3"
+  city_1_dst: "0"          # Turkiye is permanently UTC+3 since 2016
+  city_2_name: "London"
+  city_2_utc_offset: "0"
+  city_2_dst: "1"
+  city_3_name: "New York"
+  city_3_utc_offset: "-5"
+  city_3_dst: "2"
+  city_4_name: "Vancouver"
+  city_4_utc_offset: "-7"
+  city_4_dst: "0"          # BC stopped changing clocks; -7 year-round
+  city_5_name: "Chicago"
+  city_5_utc_offset: "-6"
+  city_5_dst: "2"
+  # Weather is not an HA entity — see packages/weather.yaml (Open-Meteo,
+  # coordinates in secrets.yaml).
+
+sensor:
+  - platform: homeassistant
+    id: ha_light_1_bri
+    entity_id: ${light_1_entity}
+    attribute: brightness
+  - platform: homeassistant
+    id: ha_light_2_bri
+    entity_id: ${light_2_entity}
+    attribute: brightness
+  - platform: homeassistant
+    id: ha_light_3_bri
+    entity_id: ${light_3_entity}
+    attribute: brightness
+  - platform: homeassistant
+    id: ha_light_4_bri
+    entity_id: ${light_4_entity}
+    attribute: brightness
+  - platform: homeassistant
+    id: ha_plug_1_power
+    entity_id: ${plug_1_power_entity}
+  - platform: homeassistant
+    id: ha_plug_2_power
+    entity_id: ${plug_2_power_entity}
+  - platform: homeassistant
+    id: ha_plug_3_power
+    entity_id: ${plug_3_power_entity}
+  - platform: homeassistant
+    id: ha_plug_4_power
+    entity_id: ${plug_4_power_entity}
+  - platform: homeassistant
+    id: ha_plug_5_power
+    entity_id: ${plug_5_power_entity}
+  - platform: homeassistant
+    id: ha_plug_6_power
+    entity_id: ${plug_6_power_entity}
+  - platform: homeassistant
+    id: ha_plug_7_power
+    entity_id: ${plug_7_power_entity}
+  - platform: homeassistant
+    id: ha_plug_8_power
+    entity_id: ${plug_8_power_entity}
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_light_1_state
+    entity_id: ${light_1_entity}
+  - platform: homeassistant
+    id: ha_light_2_state
+    entity_id: ${light_2_entity}
+  - platform: homeassistant
+    id: ha_light_3_state
+    entity_id: ${light_3_entity}
+  - platform: homeassistant
+    id: ha_light_4_state
+    entity_id: ${light_4_entity}
+  - platform: homeassistant
+    id: ha_plug_1_state
+    entity_id: ${plug_1_entity}
+  - platform: homeassistant
+    id: ha_plug_2_state
+    entity_id: ${plug_2_entity}
+  - platform: homeassistant
+    id: ha_plug_3_state
+    entity_id: ${plug_3_entity}
+  - platform: homeassistant
+    id: ha_plug_4_state
+    entity_id: ${plug_4_entity}
+  - platform: homeassistant
+    id: ha_plug_5_state
+    entity_id: ${plug_5_entity}
+  - platform: homeassistant
+    id: ha_plug_6_state
+    entity_id: ${plug_6_entity}
+  - platform: homeassistant
+    id: ha_plug_7_state
+    entity_id: ${plug_7_entity}
+  - platform: homeassistant
+    id: ha_plug_8_state
+    entity_id: ${plug_8_entity}
