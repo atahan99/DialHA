@@ -12,23 +12,28 @@ UI look (launcher ring, dial-value screens) takes cues from [M5Dial-UserDemo](ht
 | Unit IR U002 | PORT.B: **TX = G2**, **RX = G1** |
 | Power | Stays plugged in (USB or 6–36 V terminal) |
 | Stand | [M5Stack Dial Angled Desk Stand with Pen Holder & USB-C Cable Channel](https://www.printables.com/model/1758751-m5stack-dial-angled-desk-stand-with-pen-holder-usb) by MintPrint — 3D printed |
+| **USB-C 90° adapter** | **Effectively required with that stand** — see below |
 
 Do **not** enable `psram:` — the module has none.
 
-The stand tilts the Dial toward you for desk use and routes the USB-C cable out
-the back, which suits this firmware: the Dial is always powered, so `Rotate` in
-Settings flips LVGL 180° to put the physical M5 logo where you want it.
+**On the USB-C adapter:** a straight cable does not fit the stand's cable
+channel. Without a right-angle adapter the only way to plug in is to rotate the
+Dial 90°, and the cable then exits the *side* instead of the channel the case
+was designed around — which defeats the point of the stand and looks untidy on a
+desk. Get a low-profile 90° USB-C adapter and the cable sits in the lane as
+intended. (Rotating the Dial is otherwise fine: `Rotate` in Settings steps LVGL
+through 0/90/180/270° and rotates touch input to match — but it is a workaround
+for a missing adapter, not the intended setup.)
 
-## Build
+## Showcase
 
-<!-- Drop photos in docs/images/ using these names and they will appear here. -->
+**Core:** clock face, Weather, Pomodoro, Timer, Lights
 
-![M5Dial on the printed angled stand](docs/images/build-stand.jpg)
+![Core UI — clock, weather, pomodoro, timer, lights](docs/images/core-ui-showcase.png)
 
-| | |
-|---|---|
-| ![Clock face](docs/images/ui-clock.jpg) | ![Launcher ring](docs/images/ui-launcher.jpg) |
-| ![AC page](docs/images/ui-ac.jpg) | ![Lights page](docs/images/ui-lights.jpg) |
+**Controls:** launcher ring, AC, Plugs, Settings, Scenes
+
+![Controls UI — launcher, AC, plugs, settings, scenes](docs/images/controls-ui-showcase.png)
 
 ## Home Assistant + ESPHome setup
 
@@ -214,14 +219,15 @@ fly — see [`docs/ac-ir-protocol.md`](docs/ac-ir-protocol.md).
 - `ac_power` / `ac_temp` / `ac_fan` persist, so state survives reboot and OTA
 - Pressing the **physical remote** updates the Dial — the receiver decodes the
   same format and adopts temp/fan/power
-- Each command is sent **3×** (`ac_tx_repeats` at the top of `ac.yaml`). Frames
-  are absolute state, so repeats are idempotent; this buys range because the
-  Unit IR's single LED is far weaker than a handheld remote's
+- Each command is sent **5×** (`ac_tx_repeats` in `ac.yaml`, adjustable at
+  runtime via `ac_set_repeats`). Frames are absolute state, so repeats are
+  idempotent; this buys range because the Unit IR's single LED is far weaker
+  than a handheld remote's
 
-Mode is fixed to COOL. A `component: ac_commit took a long time (~230 ms)`
+Mode is fixed to COOL. A `component: ac_commit took a long time (~420 ms)`
 warning on transmit is expected and harmless: one frame is ~52 ms and we send
-three, with the transmitter deliberately blocking (chunked sends get starved by
-LVGL). The 400 ms debounce means it fires once per adjustment.
+five with 40 ms gaps, with the transmitter deliberately blocking (chunked sends
+get starved by LVGL). The 400 ms debounce means it fires once per adjustment.
 
 **Aiming matters more than anything in software.** The AC's receiver window is
 behind the front panel, pointing *out and slightly down into the room* — so
@@ -229,7 +235,9 @@ directly underneath the indoor unit is the worst possible spot, and the emitter
 ends up firing at its blind underside. The Unit IR is on a Grove cable and does
 not have to sit next to the Dial: mount it where it can see the AC's front
 panel, or bounce it off a matte white ceiling. If commands still get missed at
-your final position, raise `ac_tx_repeats` to `5` and rebuild.
+your final position, raise `ac_tx_repeats` and rebuild, or try
+`ac_carrier_hz: "36000"` / `"40000"` — the carrier frequency was never measured
+(a demodulator strips it), so 38 kHz remains an assumption.
 
 **`ac.yaml`:** Unit IR TX/RX only — no HA climate entity. The frame format,
 capture method and verification are documented in
@@ -302,7 +310,7 @@ include/
   settings_store.h        # immediate-write NVS persistence for UI settings
 docs/
   ac-ir-protocol.md       # how the IR protocol was decoded
-  images/                 # build + UI photos shown in this README
+  images/                 # UI showcase renders used in this README
 packages/
   hardware.yaml
   entities.yaml           # HA entity IDs + cities (committed)
