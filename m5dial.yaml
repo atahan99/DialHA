@@ -11,6 +11,7 @@ esphome:
     - include/tz_dst.h
     - include/settings_store.h
     - include/timefmt.h
+    - include/agent.h
   platformio_options:
     board_build.flash_mode: dio
   on_boot:

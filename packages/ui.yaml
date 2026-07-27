@@ -95,6 +95,10 @@ globals:
   - id: light_index
     type: int
     initial_value: "0"
+  # Brightness target for the selected light, 5..255. Seeded from HA on select.
+  - id: light_bri
+    type: int
+    initial_value: "128"
   - id: plug_sel
     type: int
     initial_value: "0"
@@ -141,10 +145,26 @@ globals:
   - id: ring_numerals
     type: bool
     initial_value: "true"
+  # Page that was showing when the front button was pressed — see front_action.
+  - id: front_page
+    type: lv_obj_t *
+    initial_value: "nullptr"
   # AC dial target: 0=temp 1=fan 2=swing
   - id: ac_focus
     type: int
     initial_value: "0"
+
+# Home Assistant pushes light state whenever it changes, but nothing on the
+# Dial listens; polling the page that is actually on screen is the same trick
+# packages/time.yaml uses for the clock and cities.
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: page_lights
+          then:
+            - script.execute: lights_refresh
 
 script:
   - id: ui_beep
@@ -171,69 +191,29 @@ script:
           brightness: 20%
       - lvgl.page.show: page_clock
 
+  # 0 Settings 1 AC 2 Plugs 3 Lights 4 Time 5 Scenes — order matches the
+  # wedges clockwise from the top.
   - id: apply_launcher_focus
     then:
       - lambda: |-
-          // 0 Settings 1 AC 2 Plugs 3 Lights 4 Time 5 Scenes
-          int i = id(launcher_index);
-          if (i < 0) i = 0;
-          if (i > 5) i = 5;
-          id(launcher_index) = i;
-      - lvgl.widget.update:
-          id: btn_seg_settings
-          border_color: !lambda "return id(launcher_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: btn_seg_ac
-          border_color: !lambda "return id(launcher_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: btn_seg_plugs
-          border_color: !lambda "return id(launcher_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: btn_seg_lights
-          border_color: !lambda "return id(launcher_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: btn_seg_time
-          border_color: !lambda "return id(launcher_index) == 4 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: btn_seg_scenes
-          border_color: !lambda "return id(launcher_index) == 5 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.label.update:
-          id: lbl_seg_settings
-          text_color: !lambda "return id(launcher_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0xF4F7F8);"
-      - lvgl.label.update:
-          id: lbl_seg_ac
-          text_color: !lambda "return id(launcher_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0xF4F7F8);"
-      - lvgl.label.update:
-          id: lbl_seg_plugs
-          text_color: !lambda "return id(launcher_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0xF4F7F8);"
-      - lvgl.label.update:
-          id: lbl_seg_lights
-          text_color: !lambda "return id(launcher_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0xF4F7F8);"
-      - lvgl.label.update:
-          id: lbl_seg_time
-          text_color: !lambda "return id(launcher_index) == 4 ? lv_color_hex(0xFFD400) : lv_color_hex(0xF4F7F8);"
-      - lvgl.label.update:
-          id: lbl_seg_scenes
-          text_color: !lambda "return id(launcher_index) == 5 ? lv_color_hex(0xFFD400) : lv_color_hex(0xF4F7F8);"
-      # Focus also tints the icon, not just the border
-      - lvgl.label.update:
-          id: icon_seg_settings
-          text_color: !lambda "return id(launcher_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x9EA7AA);"
-      - lvgl.label.update:
-          id: icon_seg_ac
-          text_color: !lambda "return id(launcher_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x63E7F2);"
-      - lvgl.label.update:
-          id: icon_seg_plugs
-          text_color: !lambda "return id(launcher_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x9EA7AA);"
-      - lvgl.label.update:
-          id: icon_seg_lights
-          text_color: !lambda "return id(launcher_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0xFFD400);"
-      - lvgl.label.update:
-          id: icon_seg_time
-          text_color: !lambda "return id(launcher_index) == 4 ? lv_color_hex(0xFFD400) : lv_color_hex(0x9EA7AA);"
-      - lvgl.label.update:
-          id: icon_seg_scenes
-          text_color: !lambda "return id(launcher_index) == 5 ? lv_color_hex(0xFFD400) : lv_color_hex(0xFF8A00);"
+          int sel = id(launcher_index);
+          if (sel < 0) sel = 0;
+          if (sel > 5) sel = 5;
+          id(launcher_index) = sel;
+          lv_obj_t *segs[] = {id(btn_seg_settings), id(btn_seg_ac), id(btn_seg_plugs),
+                              id(btn_seg_lights), id(btn_seg_time), id(btn_seg_scenes)};
+          lv_obj_t *labels[] = {id(lbl_seg_settings), id(lbl_seg_ac), id(lbl_seg_plugs),
+                                id(lbl_seg_lights), id(lbl_seg_time), id(lbl_seg_scenes)};
+          lv_obj_t *icons[] = {id(icon_seg_settings), id(icon_seg_ac), id(icon_seg_plugs),
+                               id(icon_seg_lights), id(icon_seg_time), id(icon_seg_scenes)};
+          // Resting icon tint per wedge; focus overrides all of them with amber.
+          const uint32_t tint[] = {0x9EA7AA, 0x63E7F2, 0x9EA7AA, 0xFFD400, 0x9EA7AA, 0xFF8A00};
+          for (int i = 0; i < 6; i++) {
+            bool on = i == sel;
+            lv_obj_set_style_border_color(segs[i], lv_color_hex(on ? 0xFFD400 : 0x333B3E), 0);
+            lv_obj_set_style_text_color(labels[i], lv_color_hex(on ? 0xFFD400 : 0xF4F7F8), 0);
+            lv_obj_set_style_text_color(icons[i], lv_color_hex(on ? 0xFFD400 : tint[i]), 0);
+          }
 
   - id: launcher_open_selected
     then:
@@ -242,32 +222,31 @@ script:
             lambda: "return id(launcher_index) == 0;"
           then:
             - script.execute: open_settings
-          else:
-            - if:
-                condition:
-                  lambda: "return id(launcher_index) == 1;"
-                then:
-                  - script.execute: open_ac
-                else:
-                  - if:
-                      condition:
-                        lambda: "return id(launcher_index) == 2;"
-                      then:
-                        - script.execute: open_plugs
-                      else:
-                        - if:
-                            condition:
-                              lambda: "return id(launcher_index) == 3;"
-                            then:
-                              - script.execute: open_lights
-                            else:
-                              - if:
-                                  condition:
-                                    lambda: "return id(launcher_index) == 4;"
-                                  then:
-                                    - script.execute: open_time
-                                  else:
-                                    - script.execute: open_scenes
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 1;"
+          then:
+            - script.execute: open_ac
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 2;"
+          then:
+            - script.execute: open_plugs
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 3;"
+          then:
+            - script.execute: open_lights
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 4;"
+          then:
+            - script.execute: open_time
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 5;"
+          then:
+            - script.execute: open_scenes
 
   # Touch on the clock face wakes the backlight but stays put; a double tap is
   # what opens the launcher. Idle (45s) drops back to the dim level.
@@ -308,7 +287,6 @@ script:
           brightness: 100%
       - lvgl.page.show: page_launcher
       - script.execute: apply_launcher_focus
-      - lvgl.widget.focus: btn_seg_ac
 
   - id: nav_back
     then:
@@ -359,31 +337,69 @@ script:
 
   - id: front_action
     then:
+      # Snapshot the page *before* any handler runs. Several of them navigate
+      # (the launcher opens a page, the Time hub opens a sub-page), and with a
+      # flat chain of `lvgl.page.is_showing` the new page's handler would fire
+      # in the same press — one click on the launcher landed on Cities.
+      - lambda: "id(front_page) = lv_screen_active();"
       - if:
           condition:
-            lvgl.page.is_showing: page_launcher
+            lambda: "return id(front_page) == id(page_launcher)->obj;"
           then:
             - script.execute: launcher_open_selected
       - if:
           condition:
-            lvgl.page.is_showing: page_settings
+            lambda: "return id(front_page) == id(page_settings)->obj;"
           then:
             - script.execute: settings_activate
       - if:
           condition:
-            lvgl.page.is_showing: page_scenes
+            lambda: "return id(front_page) == id(page_scenes)->obj;"
           then:
             - script.execute: scene_activate
       - if:
           condition:
-            lvgl.page.is_showing: page_plugs
+            lambda: "return id(front_page) == id(page_plugs)->obj;"
           then:
             - script.execute: plug_toggle
       - if:
           condition:
-            lvgl.page.is_showing: page_lights
+            lambda: "return id(front_page) == id(page_lights)->obj;"
           then:
             - script.execute: light_toggle
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_ac)->obj;"
+          then:
+            # Dial adjusts the focused field; the press picks which one.
+            - script.execute:
+                id: ac_set_focus
+                focus: !lambda "return id(ac_focus) == 0 ? 1 : 0;"
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_time)->obj;"
+          then:
+            - script.execute: time_hub_open
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_pomodoro)->obj;"
+          then:
+            - script.execute: pomo_toggle
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_stopwatch)->obj;"
+          then:
+            - script.execute: sw_toggle
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_timer)->obj;"
+          then:
+            - script.execute: timer_toggle
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_weather)->obj;"
+          then:
+            - script.execute: weather_fetch
 
   - id: front_or_wake
     then:
@@ -415,8 +431,9 @@ script:
           condition:
             lvgl.page.is_showing: page_lights
           then:
-            - lambda: "id(light_index) = (id(light_index) + 1) % 4;"
-            - script.execute: lights_refresh
+            - script.execute:
+                id: light_bri_step
+                delta: 1
       - if:
           condition:
             lvgl.page.is_showing: page_plugs
@@ -476,8 +493,9 @@ script:
           condition:
             lvgl.page.is_showing: page_lights
           then:
-            - lambda: "id(light_index) = (id(light_index) + 3) % 4;"
-            - script.execute: lights_refresh
+            - script.execute:
+                id: light_bri_step
+                delta: -1
       - if:
           condition:
             lvgl.page.is_showing: page_plugs
@@ -533,7 +551,9 @@ script:
           id: display_backlight
           brightness: 100%
       - lvgl.page.show: page_lights
-      - script.execute: lights_refresh
+      - script.execute:
+          id: light_select
+          i: !lambda "return id(light_index);"
   - id: open_plugs
     then:
       - light.turn_on:
@@ -645,36 +665,16 @@ script:
 
   - id: apply_settings_focus
     then:
-      - lvgl.widget.update:
-          id: row_set_display
-          border_color: !lambda "return id(settings_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_set_rotate
-          border_color: !lambda "return id(settings_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_set_clock
-          border_color: !lambda "return id(settings_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_set_ticks
-          border_color: !lambda "return id(settings_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_set_network
-          border_color: !lambda "return id(settings_index) == 4 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_set_audio
-          border_color: !lambda "return id(settings_index) == 5 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_set_night
-          border_color: !lambda "return id(settings_index) == 6 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_set_ap
-          border_color: !lambda "return id(settings_index) == 7 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      # Keep the focused row visible in the scrolling container
       - lambda: |-
-          lv_obj_t *rows[] = {id(row_set_display), id(row_set_rotate), id(row_set_clock), id(row_set_ticks), id(row_set_network), id(row_set_audio), id(row_set_night), id(row_set_ap)};
-          int i = id(settings_index);
-          if (i >= 0 && i < 8)
-            lv_obj_scroll_to_view(rows[i], LV_ANIM_ON);
+          lv_obj_t *rows[] = {id(row_set_display), id(row_set_rotate), id(row_set_clock),
+                              id(row_set_ticks), id(row_set_network), id(row_set_audio),
+                              id(row_set_night), id(row_set_ap)};
+          int sel = id(settings_index);
+          for (int i = 0; i < 8; i++)
+            lv_obj_set_style_border_color(rows[i], lv_color_hex(i == sel ? 0xFFD400 : 0x333B3E), 0);
+          // Keep the focused row visible in the scrolling container
+          if (sel >= 0 && sel < 8)
+            lv_obj_scroll_to_view(rows[sel], LV_ANIM_ON);
 
   - id: settings_activate
     then:
@@ -736,6 +736,60 @@ script:
           id: ui_beep
           tune: "ok:d=32,o=5,b=180:e"
 
+  # Lights page. The first tap on a card only selects it; tapping the selected
+  # card toggles it. So the dial can be aimed at a light without switching it,
+  # and a mis-aimed tap costs nothing. The dial then changes that light's
+  # brightness — tracked locally in light_bri, because Home Assistant's
+  # reported value lags a command by a refresh and the dial would feel like it
+  # was fighting back.
+  - id: light_card_tap
+    parameters:
+      i: int
+    then:
+      - if:
+          condition:
+            lambda: "return id(light_index) == i;"
+          then:
+            - script.execute: light_toggle
+          else:
+            - script.execute:
+                id: light_select
+                i: !lambda "return i;"
+
+  - id: light_select
+    parameters:
+      i: int
+    then:
+      - lambda: |-
+          id(light_index) = (i < 0 || i > 3) ? 0 : i;
+          const float bri[] = {id(ha_light_1_bri).state, id(ha_light_2_bri).state,
+                               id(ha_light_3_bri).state, id(ha_light_4_bri).state};
+          float b = bri[id(light_index)];
+          id(light_bri) = isnan(b) ? 128 : (int) b;
+      - script.execute: lights_refresh
+
+  - id: light_bri_step
+    parameters:
+      delta: int
+    then:
+      - lambda: |-
+          int v = id(light_bri) + (delta > 0 ? 16 : -16);
+          // Floor at 5/255 rather than 0: brightness 0 is "off" to HA, and the
+          // dial should dim a light, not switch it off behind your back.
+          id(light_bri) = v < 5 ? 5 : (v > 255 ? 255 : v);
+          lv_slider_set_value(id(sld_light_bri), id(light_bri), LV_ANIM_OFF);
+      - script.execute: light_bri_commit
+
+  # Debounced like ac_commit: the dial can spin freely, one call goes to HA
+  # when it settles.
+  - id: light_bri_commit
+    mode: restart
+    then:
+      - delay: 250ms
+      - script.execute:
+          id: light_apply_bri
+          bri: !lambda "return (float) id(light_bri);"
+
   - id: light_apply_bri
     parameters:
       bri: float
@@ -751,6 +805,7 @@ script:
               int i = id(light_index) % 4;
               return std::string(ents[i]);
             brightness: !lambda "return (int)bri;"
+
   - id: light_toggle
     then:
       - homeassistant.action:
@@ -762,48 +817,41 @@ script:
                 "${light_3_entity}", "${light_4_entity}"
               };
               return std::string(ents[id(light_index) % 4]);
+
   - id: lights_refresh
     then:
-      - lvgl.widget.update:
-          id: card_light_0
-          border_color: !lambda "return id(light_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: card_light_1
-          border_color: !lambda "return id(light_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: card_light_2
-          border_color: !lambda "return id(light_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: card_light_3
-          border_color: !lambda "return id(light_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.label.update:
-          id: lbl_light_0_bri
-          text: !lambda |-
-            if (isnan(id(ha_light_1_bri).state)) return std::string("--%");
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%.0f%%", id(ha_light_1_bri).state * 100.0f / 255.0f);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_light_1_bri
-          text: !lambda |-
-            if (isnan(id(ha_light_2_bri).state)) return std::string("--%");
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%.0f%%", id(ha_light_2_bri).state * 100.0f / 255.0f);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_light_2_bri
-          text: !lambda |-
-            if (isnan(id(ha_light_3_bri).state)) return std::string("--%");
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%.0f%%", id(ha_light_3_bri).state * 100.0f / 255.0f);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_light_3_bri
-          text: !lambda |-
-            if (isnan(id(ha_light_4_bri).state)) return std::string("--%");
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%.0f%%", id(ha_light_4_bri).state * 100.0f / 255.0f);
-            return std::string(buf);
+      - lambda: |-
+          lv_obj_t *cards[] = {id(card_light_0), id(card_light_1),
+                               id(card_light_2), id(card_light_3)};
+          lv_obj_t *names[] = {id(lbl_light_0_name), id(lbl_light_1_name),
+                               id(lbl_light_2_name), id(lbl_light_3_name)};
+          lv_obj_t *vals[] = {id(lbl_light_0_bri), id(lbl_light_1_bri),
+                              id(lbl_light_2_bri), id(lbl_light_3_bri)};
+          const float bri[] = {id(ha_light_1_bri).state, id(ha_light_2_bri).state,
+                               id(ha_light_3_bri).state, id(ha_light_4_bri).state};
+          text_sensor::TextSensor *st[] = {id(ha_light_1_state), id(ha_light_2_state),
+                                           id(ha_light_3_state), id(ha_light_4_state)};
+          for (int i = 0; i < 4; i++) {
+            bool on = st[i]->state == "on";
+            lv_obj_set_style_border_color(
+                cards[i], lv_color_hex(i == id(light_index) ? 0xFFD400 : 0x333B3E), 0);
+            lv_obj_set_style_text_color(
+                names[i], lv_color_hex(on ? 0xF4F7F8 : 0x5A6467), 0);
+            char buf[12];
+            if (!on)
+              snprintf(buf, sizeof(buf), "OFF");
+            else if (isnan(bri[i]))
+              snprintf(buf, sizeof(buf), "ON");
+            else
+              snprintf(buf, sizeof(buf), "%.0f%%", bri[i] * 100.0f / 255.0f);
+            lv_label_set_text(vals[i], buf);
+            lv_obj_set_style_text_color(
+                vals[i], lv_color_hex(on ? 0xFFD400 : 0x5A6467), 0);
+          }
+          // Not while a finger is on it, or the 1 Hz refresh below snaps the
+          // knob back out from under the drag.
+          if (!lv_obj_has_state(id(sld_light_bri), LV_STATE_PRESSED))
+            lv_slider_set_value(id(sld_light_bri), id(light_bri), LV_ANIM_OFF);
 
   - id: plug_page_next
     then:
@@ -858,200 +906,56 @@ script:
 
   - id: plugs_refresh
     then:
-      - lvgl.label.update:
-          id: lbl_plugs_page
-          text: !lambda |-
-            int n = ${plug_count};
-            int pages = (n + 3) / 4;
-            if (pages < 1) pages = 1;
-            int page = id(plug_sel) / 4;
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%d/%d", page + 1, pages);
-            return std::string(buf);
-      - lvgl.widget.update:
-          id: row_plug_0
-          border_color: !lambda "return (id(plug_sel) % 4) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_plug_1
-          border_color: !lambda "return (id(plug_sel) % 4) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_plug_2
-          border_color: !lambda "return (id(plug_sel) % 4) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_plug_3
-          border_color: !lambda "return (id(plug_sel) % 4) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.label.update:
-          id: lbl_plug_0_name
-          text: !lambda |-
-            static const char* names[] = {
+      - lambda: |-
+          static const char *names[] = {
               "${plug_1_name}", "${plug_2_name}", "${plug_3_name}", "${plug_4_name}",
-              "${plug_5_name}", "${plug_6_name}", "${plug_7_name}", "${plug_8_name}"
-            };
-            int abs = (id(plug_sel) / 4) * 4 + 0;
-            if (abs >= ${plug_count}) return std::string("");
-            return std::string(names[abs]);
-      - lvgl.label.update:
-          id: lbl_plug_1_name
-          text: !lambda |-
-            static const char* names[] = {
-              "${plug_1_name}", "${plug_2_name}", "${plug_3_name}", "${plug_4_name}",
-              "${plug_5_name}", "${plug_6_name}", "${plug_7_name}", "${plug_8_name}"
-            };
-            int abs = (id(plug_sel) / 4) * 4 + 1;
-            if (abs >= ${plug_count}) return std::string("");
-            return std::string(names[abs]);
-      - lvgl.label.update:
-          id: lbl_plug_2_name
-          text: !lambda |-
-            static const char* names[] = {
-              "${plug_1_name}", "${plug_2_name}", "${plug_3_name}", "${plug_4_name}",
-              "${plug_5_name}", "${plug_6_name}", "${plug_7_name}", "${plug_8_name}"
-            };
-            int abs = (id(plug_sel) / 4) * 4 + 2;
-            if (abs >= ${plug_count}) return std::string("");
-            return std::string(names[abs]);
-      - lvgl.label.update:
-          id: lbl_plug_3_name
-          text: !lambda |-
-            static const char* names[] = {
-              "${plug_1_name}", "${plug_2_name}", "${plug_3_name}", "${plug_4_name}",
-              "${plug_5_name}", "${plug_6_name}", "${plug_7_name}", "${plug_8_name}"
-            };
-            int abs = (id(plug_sel) / 4) * 4 + 3;
-            if (abs >= ${plug_count}) return std::string("");
-            return std::string(names[abs]);
-      - lvgl.label.update:
-          id: lbl_plug_0_st
-          text: !lambda |-
-            int abs = (id(plug_sel) / 4) * 4 + 0;
-            if (abs >= ${plug_count}) return std::string("");
-            std::string s;
-            if (abs == 0) s = id(ha_plug_1_state).state;
-            else if (abs == 1) s = id(ha_plug_2_state).state;
-            else if (abs == 2) s = id(ha_plug_3_state).state;
-            else if (abs == 3) s = id(ha_plug_4_state).state;
-            else if (abs == 4) s = id(ha_plug_5_state).state;
-            else if (abs == 5) s = id(ha_plug_6_state).state;
-            else if (abs == 6) s = id(ha_plug_7_state).state;
-            else s = id(ha_plug_8_state).state;
-            return std::string((s == "on" || s == "ON") ? "ON" : "OFF");
-      - lvgl.label.update:
-          id: lbl_plug_1_st
-          text: !lambda |-
-            int abs = (id(plug_sel) / 4) * 4 + 1;
-            if (abs >= ${plug_count}) return std::string("");
-            std::string s;
-            if (abs == 0) s = id(ha_plug_1_state).state;
-            else if (abs == 1) s = id(ha_plug_2_state).state;
-            else if (abs == 2) s = id(ha_plug_3_state).state;
-            else if (abs == 3) s = id(ha_plug_4_state).state;
-            else if (abs == 4) s = id(ha_plug_5_state).state;
-            else if (abs == 5) s = id(ha_plug_6_state).state;
-            else if (abs == 6) s = id(ha_plug_7_state).state;
-            else s = id(ha_plug_8_state).state;
-            return std::string((s == "on" || s == "ON") ? "ON" : "OFF");
-      - lvgl.label.update:
-          id: lbl_plug_2_st
-          text: !lambda |-
-            int abs = (id(plug_sel) / 4) * 4 + 2;
-            if (abs >= ${plug_count}) return std::string("");
-            std::string s;
-            if (abs == 0) s = id(ha_plug_1_state).state;
-            else if (abs == 1) s = id(ha_plug_2_state).state;
-            else if (abs == 2) s = id(ha_plug_3_state).state;
-            else if (abs == 3) s = id(ha_plug_4_state).state;
-            else if (abs == 4) s = id(ha_plug_5_state).state;
-            else if (abs == 5) s = id(ha_plug_6_state).state;
-            else if (abs == 6) s = id(ha_plug_7_state).state;
-            else s = id(ha_plug_8_state).state;
-            return std::string((s == "on" || s == "ON") ? "ON" : "OFF");
-      - lvgl.label.update:
-          id: lbl_plug_3_st
-          text: !lambda |-
-            int abs = (id(plug_sel) / 4) * 4 + 3;
-            if (abs >= ${plug_count}) return std::string("");
-            std::string s;
-            if (abs == 0) s = id(ha_plug_1_state).state;
-            else if (abs == 1) s = id(ha_plug_2_state).state;
-            else if (abs == 2) s = id(ha_plug_3_state).state;
-            else if (abs == 3) s = id(ha_plug_4_state).state;
-            else if (abs == 4) s = id(ha_plug_5_state).state;
-            else if (abs == 5) s = id(ha_plug_6_state).state;
-            else if (abs == 6) s = id(ha_plug_7_state).state;
-            else s = id(ha_plug_8_state).state;
-            return std::string((s == "on" || s == "ON") ? "ON" : "OFF");
-      - lvgl.label.update:
-          id: lbl_plug_0_w
-          text: !lambda |-
-            int abs = (id(plug_sel) / 4) * 4 + 0;
-            if (abs >= ${plug_count}) return std::string("");
-            float p = NAN;
-            if (abs == 0) p = id(ha_plug_1_power).state;
-            else if (abs == 1) p = id(ha_plug_2_power).state;
-            else if (abs == 2) p = id(ha_plug_3_power).state;
-            else if (abs == 3) p = id(ha_plug_4_power).state;
-            else if (abs == 4) p = id(ha_plug_5_power).state;
-            else if (abs == 5) p = id(ha_plug_6_power).state;
-            else if (abs == 6) p = id(ha_plug_7_power).state;
-            else p = id(ha_plug_8_power).state;
-            if (isnan(p)) return std::string("--W");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%.0fW", p);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_plug_1_w
-          text: !lambda |-
-            int abs = (id(plug_sel) / 4) * 4 + 1;
-            if (abs >= ${plug_count}) return std::string("");
-            float p = NAN;
-            if (abs == 0) p = id(ha_plug_1_power).state;
-            else if (abs == 1) p = id(ha_plug_2_power).state;
-            else if (abs == 2) p = id(ha_plug_3_power).state;
-            else if (abs == 3) p = id(ha_plug_4_power).state;
-            else if (abs == 4) p = id(ha_plug_5_power).state;
-            else if (abs == 5) p = id(ha_plug_6_power).state;
-            else if (abs == 6) p = id(ha_plug_7_power).state;
-            else p = id(ha_plug_8_power).state;
-            if (isnan(p)) return std::string("--W");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%.0fW", p);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_plug_2_w
-          text: !lambda |-
-            int abs = (id(plug_sel) / 4) * 4 + 2;
-            if (abs >= ${plug_count}) return std::string("");
-            float p = NAN;
-            if (abs == 0) p = id(ha_plug_1_power).state;
-            else if (abs == 1) p = id(ha_plug_2_power).state;
-            else if (abs == 2) p = id(ha_plug_3_power).state;
-            else if (abs == 3) p = id(ha_plug_4_power).state;
-            else if (abs == 4) p = id(ha_plug_5_power).state;
-            else if (abs == 5) p = id(ha_plug_6_power).state;
-            else if (abs == 6) p = id(ha_plug_7_power).state;
-            else p = id(ha_plug_8_power).state;
-            if (isnan(p)) return std::string("--W");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%.0fW", p);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_plug_3_w
-          text: !lambda |-
-            int abs = (id(plug_sel) / 4) * 4 + 3;
-            if (abs >= ${plug_count}) return std::string("");
-            float p = NAN;
-            if (abs == 0) p = id(ha_plug_1_power).state;
-            else if (abs == 1) p = id(ha_plug_2_power).state;
-            else if (abs == 2) p = id(ha_plug_3_power).state;
-            else if (abs == 3) p = id(ha_plug_4_power).state;
-            else if (abs == 4) p = id(ha_plug_5_power).state;
-            else if (abs == 5) p = id(ha_plug_6_power).state;
-            else if (abs == 6) p = id(ha_plug_7_power).state;
-            else p = id(ha_plug_8_power).state;
-            if (isnan(p)) return std::string("--W");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%.0fW", p);
-            return std::string(buf);
+              "${plug_5_name}", "${plug_6_name}", "${plug_7_name}", "${plug_8_name}"};
+          text_sensor::TextSensor *states[] = {
+              id(ha_plug_1_state), id(ha_plug_2_state), id(ha_plug_3_state),
+              id(ha_plug_4_state), id(ha_plug_5_state), id(ha_plug_6_state),
+              id(ha_plug_7_state), id(ha_plug_8_state)};
+          sensor::Sensor *power[] = {
+              id(ha_plug_1_power), id(ha_plug_2_power), id(ha_plug_3_power),
+              id(ha_plug_4_power), id(ha_plug_5_power), id(ha_plug_6_power),
+              id(ha_plug_7_power), id(ha_plug_8_power)};
+          lv_obj_t *rows[] = {id(row_plug_0), id(row_plug_1),
+                              id(row_plug_2), id(row_plug_3)};
+          lv_obj_t *lname[] = {id(lbl_plug_0_name), id(lbl_plug_1_name),
+                               id(lbl_plug_2_name), id(lbl_plug_3_name)};
+          lv_obj_t *lstate[] = {id(lbl_plug_0_st), id(lbl_plug_1_st),
+                                id(lbl_plug_2_st), id(lbl_plug_3_st)};
+          lv_obj_t *lwatt[] = {id(lbl_plug_0_w), id(lbl_plug_1_w),
+                               id(lbl_plug_2_w), id(lbl_plug_3_w)};
+          const int n = ${plug_count};
+          int pages = (n + 3) / 4;
+          if (pages < 1) pages = 1;
+          const int page = id(plug_sel) / 4;
+          char buf[16];
+          snprintf(buf, sizeof(buf), "%d/%d", page + 1, pages);
+          lv_label_set_text(id(lbl_plugs_page), buf);
+          for (int i = 0; i < 4; i++) {
+            lv_obj_set_style_border_color(
+                rows[i], lv_color_hex((id(plug_sel) % 4) == i ? 0xFFD400 : 0x333B3E), 0);
+            // The last page can be short; blank the leftover rows rather than
+            // showing a stale entry from the page before.
+            const int slot = page * 4 + i;
+            if (slot >= n) {
+              lv_label_set_text(lname[i], "");
+              lv_label_set_text(lstate[i], "");
+              lv_label_set_text(lwatt[i], "");
+              continue;
+            }
+            lv_label_set_text(lname[i], names[slot]);
+            const std::string s = states[slot]->state;
+            lv_label_set_text(lstate[i], (s == "on" || s == "ON") ? "ON" : "OFF");
+            const float w = power[slot]->state;
+            if (isnan(w)) {
+              lv_label_set_text(lwatt[i], "--W");
+            } else {
+              snprintf(buf, sizeof(buf), "%.0fW", w);
+              lv_label_set_text(lwatt[i], buf);
+            }
+          }
 
   - id: scene_activate
     then:
@@ -1070,18 +974,11 @@ script:
 
   - id: scenes_refresh
     then:
-      - lvgl.widget.update:
-          id: row_scene_0
-          border_color: !lambda "return id(scene_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_scene_1
-          border_color: !lambda "return id(scene_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_scene_2
-          border_color: !lambda "return id(scene_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: row_scene_3
-          border_color: !lambda "return id(scene_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
+      - lambda: |-
+          lv_obj_t *rows[] = {id(row_scene_0), id(row_scene_1), id(row_scene_2), id(row_scene_3)};
+          for (int i = 0; i < 4; i++)
+            lv_obj_set_style_border_color(
+                rows[i], lv_color_hex(i == id(scene_index) ? 0xFFD400 : 0x333B3E), 0);
 
   # Arçelik AC — every frame is synthesised in packages/ac.yaml; nothing is
   # taught, so the page works straight after a reboot.
@@ -1180,6 +1077,55 @@ script:
           text_color: !lambda |-
             return id(ac_power) ? lv_color_hex(0x63E7F2) : lv_color_hex(0x5A6467);
 
+# Agent bridge — lets a host script drive the Dial and see what it drew, so UI
+# changes can be checked without photographing the screen. See scripts/dial.py.
+# The four keys are the Dial's entire physical input surface, so anything a
+# finger can reach is reachable from here too.
+api:
+  actions:
+    - action: ui_key
+      variables:
+        key: string
+        n: int
+      then:
+        # Count as input, or LVGL's idle timers walk the UI back to the clock
+        # in the middle of a scripted sequence.
+        - lambda: "lv_display_trigger_activity(nullptr);"
+        - repeat:
+            count: !lambda "return n < 1 ? 1 : n;"
+            then:
+              - if:
+                  condition:
+                    lambda: 'return key == "cw";'
+                  then:
+                    - script.execute: maybe_wake
+                    - script.execute: encoder_nav_cw
+              - if:
+                  condition:
+                    lambda: 'return key == "ccw";'
+                  then:
+                    - script.execute: maybe_wake
+                    - script.execute: encoder_nav_ccw
+              - if:
+                  condition:
+                    lambda: 'return key == "press";'
+                  then:
+                    - script.execute: front_or_wake
+              - if:
+                  condition:
+                    lambda: 'return key == "back";'
+                  then:
+                    - script.execute: nav_back
+              # Let LVGL redraw between steps, so a burst of keys ends in the
+              # same state a human's would.
+              - delay: 50ms
+    - action: ui_screenshot
+      variables:
+        host: string
+        port: int
+      then:
+        - lambda: "m5dial::screenshot(host, port);"
+
 lvgl:
   displays:
     - round_display
@@ -1212,11 +1158,13 @@ lvgl:
                 return night || id(screen_forced_off);
             then:
               - script.execute: screen_sleep
-  encoders:
-    - sensor: encoder
-      enter_button: front_button
-      group: dial_group
-      long_press_time: 800ms
+  # No `encoders:` indev on purpose. LVGL's group focus is a second selection
+  # model on top of the *_index globals that actually paint the amber border,
+  # and ESPHome puts every widget of every page into one flat group — so the
+  # encoder walked focus onto widgets of *other* pages and the front button
+  # clicked them. The encoder and the buttons are wired to scripts in
+  # hardware.yaml instead (encoder_nav_cw/ccw, front_or_wake, nav_back), which
+  # is where all navigation already lived.
 
   style_definitions:
     - id: st_bg
@@ -1371,7 +1319,6 @@ lvgl:
             height: 44
             align: CENTER
             border_color: 0x333B3E
-            group: dial_group
             widgets:
               - label:
                   text: "HOME"
@@ -1389,7 +1336,6 @@ lvgl:
             align: CENTER
             x: 0
             y: -78
-            group: dial_group
             widgets:
               - label:
                   id: icon_seg_settings
@@ -1420,7 +1366,6 @@ lvgl:
             x: 64
             y: -38
             border_color: 0xFFD400
-            group: dial_group
             widgets:
               - label:
                   id: icon_seg_ac
@@ -1451,7 +1396,6 @@ lvgl:
             align: CENTER
             x: 64
             y: 38
-            group: dial_group
             widgets:
               - label:
                   id: icon_seg_plugs
@@ -1481,7 +1425,6 @@ lvgl:
             align: CENTER
             x: 0
             y: 78
-            group: dial_group
             widgets:
               - label:
                   id: icon_seg_lights
@@ -1511,7 +1454,6 @@ lvgl:
             align: CENTER
             x: -64
             y: 38
-            group: dial_group
             widgets:
               - label:
                   id: icon_seg_time
@@ -1541,7 +1483,6 @@ lvgl:
             align: CENTER
             x: -64
             y: -38
-            group: dial_group
             widgets:
               - label:
                   id: icon_seg_scenes
@@ -1708,30 +1649,22 @@ lvgl:
             x: -47
             y: -39
             border_color: 0xFFD400
-            group: dial_group
             widgets:
               - label:
-                  text: "\U000F0335"
-                  align: TOP_MID
-                  y: 2
-                  text_font: font_icon
-                  text_color: 0xFFD400
-              - label:
+                  id: lbl_light_0_name
                   text: ${light_1_name}
                   align: TOP_MID
-                  y: 20
                   text_font: font_label
               - label:
                   id: lbl_light_0_bri
-                  text: "--%"
+                  text: "OFF"
                   align: BOTTOM_MID
-                  y: -3
                   text_font: font_label
-                  text_color: 0x9EA7AA
+                  text_color: 0x5A6467
             on_click:
-              - lambda: "id(light_index) = 0;"
-              - script.execute: lights_refresh
-              - script.execute: light_toggle
+              - script.execute:
+                  id: light_card_tap
+                  i: 0
         - button:
             id: card_light_1
             styles: st_row
@@ -1740,30 +1673,22 @@ lvgl:
             align: CENTER
             x: 47
             y: -39
-            group: dial_group
             widgets:
               - label:
-                  text: "\U000F0335"
-                  align: TOP_MID
-                  y: 2
-                  text_font: font_icon
-                  text_color: 0xFFD400
-              - label:
+                  id: lbl_light_1_name
                   text: ${light_2_name}
                   align: TOP_MID
-                  y: 20
                   text_font: font_label
               - label:
                   id: lbl_light_1_bri
-                  text: "--%"
+                  text: "OFF"
                   align: BOTTOM_MID
-                  y: -3
                   text_font: font_label
-                  text_color: 0x9EA7AA
+                  text_color: 0x5A6467
             on_click:
-              - lambda: "id(light_index) = 1;"
-              - script.execute: lights_refresh
-              - script.execute: light_toggle
+              - script.execute:
+                  id: light_card_tap
+                  i: 1
         - button:
             id: card_light_2
             styles: st_row
@@ -1772,30 +1697,22 @@ lvgl:
             align: CENTER
             x: -47
             y: 17
-            group: dial_group
             widgets:
               - label:
-                  text: "\U000F0335"
-                  align: TOP_MID
-                  y: 2
-                  text_font: font_icon
-                  text_color: 0xFFD400
-              - label:
+                  id: lbl_light_2_name
                   text: ${light_3_name}
                   align: TOP_MID
-                  y: 20
                   text_font: font_label
               - label:
                   id: lbl_light_2_bri
-                  text: "--%"
+                  text: "OFF"
                   align: BOTTOM_MID
-                  y: -3
                   text_font: font_label
-                  text_color: 0x9EA7AA
+                  text_color: 0x5A6467
             on_click:
-              - lambda: "id(light_index) = 2;"
-              - script.execute: lights_refresh
-              - script.execute: light_toggle
+              - script.execute:
+                  id: light_card_tap
+                  i: 2
         - button:
             id: card_light_3
             styles: st_row
@@ -1804,30 +1721,22 @@ lvgl:
             align: CENTER
             x: 47
             y: 17
-            group: dial_group
             widgets:
               - label:
-                  text: "\U000F0335"
-                  align: TOP_MID
-                  y: 2
-                  text_font: font_icon
-                  text_color: 0xFFD400
-              - label:
+                  id: lbl_light_3_name
                   text: ${light_4_name}
                   align: TOP_MID
-                  y: 20
                   text_font: font_label
               - label:
                   id: lbl_light_3_bri
-                  text: "--%"
+                  text: "OFF"
                   align: BOTTOM_MID
-                  y: -3
                   text_font: font_label
-                  text_color: 0x9EA7AA
+                  text_color: 0x5A6467
             on_click:
-              - lambda: "id(light_index) = 3;"
-              - script.execute: lights_refresh
-              - script.execute: light_toggle
+              - script.execute:
+                  id: light_card_tap
+                  i: 3
         - slider:
             id: sld_light_bri
             styles: st_accent
@@ -1841,9 +1750,9 @@ lvgl:
             min_value: 10
             max_value: 255
             value: 128
-            group: dial_group
             on_release:
               then:
+                - lambda: "id(light_bri) = (int) x;"
                 - script.execute:
                     id: light_apply_bri
                     bri: !lambda "return x;"
@@ -1890,7 +1799,6 @@ lvgl:
             align: CENTER
             y: -51
             border_color: 0xFFD400
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F06A5"
@@ -1927,7 +1835,6 @@ lvgl:
             height: 30
             align: CENTER
             y: -19
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F06A5"
@@ -1965,7 +1872,6 @@ lvgl:
             height: 30
             align: CENTER
             y: 13
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F06A5"
@@ -2003,7 +1909,6 @@ lvgl:
             height: 30
             align: CENTER
             y: 45
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F06A5"
@@ -2099,7 +2004,6 @@ lvgl:
             align: CENTER
             y: -51
             border_color: 0xFFD400
-            group: dial_group
             widgets:
               - label:
                   text: ${scene_1_name}
@@ -2116,7 +2020,6 @@ lvgl:
             height: 32
             align: CENTER
             y: -17
-            group: dial_group
             widgets:
               - label:
                   text: ${scene_2_name}
@@ -2133,7 +2036,6 @@ lvgl:
             height: 32
             align: CENTER
             y: 17
-            group: dial_group
             widgets:
               - label:
                   text: ${scene_3_name}
@@ -2150,7 +2052,6 @@ lvgl:
             height: 32
             align: CENTER
             y: 51
-            group: dial_group
             widgets:
               - label:
                   text: ${scene_4_name}
@@ -2202,7 +2103,6 @@ lvgl:
             align: CENTER
             x: 0
             y: -58
-            group: dial_group
             widgets:
               - label:
                   id: icon_hub_cities
@@ -2224,7 +2124,6 @@ lvgl:
             align: CENTER
             x: 66
             y: -18
-            group: dial_group
             widgets:
               - label:
                   id: icon_hub_pomo
@@ -2246,7 +2145,6 @@ lvgl:
             align: CENTER
             x: 42
             y: 52
-            group: dial_group
             widgets:
               - label:
                   id: icon_hub_sw
@@ -2268,7 +2166,6 @@ lvgl:
             align: CENTER
             x: -42
             y: 52
-            group: dial_group
             widgets:
               - label:
                   id: icon_hub_timer
@@ -2290,7 +2187,6 @@ lvgl:
             align: CENTER
             x: -66
             y: -18
-            group: dial_group
             widgets:
               - label:
                   id: icon_hub_wx
@@ -2362,7 +2258,6 @@ lvgl:
             align: CENTER
             x: -54
             y: 58
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F0141"
@@ -2378,7 +2273,6 @@ lvgl:
             align: CENTER
             x: 54
             y: 58
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F0142"
@@ -2451,7 +2345,6 @@ lvgl:
             align: CENTER
             x: -28
             y: 58
-            group: dial_group
             widgets:
               - label:
                   id: icon_pomo_play
@@ -2468,7 +2361,6 @@ lvgl:
             align: CENTER
             x: 28
             y: 58
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F0709"
@@ -2526,7 +2418,6 @@ lvgl:
             align: CENTER
             x: -28
             y: 58
-            group: dial_group
             widgets:
               - label:
                   id: icon_sw_play
@@ -2543,7 +2434,6 @@ lvgl:
             align: CENTER
             x: 28
             y: 58
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F0709"
@@ -2616,7 +2506,6 @@ lvgl:
             align: CENTER
             x: -62
             y: 58
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F0374"
@@ -2632,7 +2521,6 @@ lvgl:
             align: CENTER
             x: 0
             y: 58
-            group: dial_group
             widgets:
               - label:
                   id: icon_timer_play
@@ -2649,7 +2537,6 @@ lvgl:
             align: CENTER
             x: 62
             y: 58
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F0415"
@@ -2665,7 +2552,6 @@ lvgl:
             align: CENTER
             x: 34
             y: 88
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F0709"
@@ -2841,7 +2727,6 @@ lvgl:
             align: CENTER
             x: 26
             y: 90
-            group: dial_group
             widgets:
               - label:
                   text: "\U000F0709"
@@ -2898,7 +2783,6 @@ lvgl:
                   height: 26
                   align: TOP_MID
                   y: 0
-                  group: dial_group
                   widgets:
                     - label:
                         text: "\U000F00DF"
@@ -2931,7 +2815,6 @@ lvgl:
                   height: 26
                   align: TOP_MID
                   y: 30
-                  group: dial_group
                   widgets:
                     - label:
                         text: "\U000F0467"
@@ -2964,7 +2847,6 @@ lvgl:
                   height: 26
                   align: TOP_MID
                   y: 60
-                  group: dial_group
                   widgets:
                     - label:
                         text: "\U000F0150"
@@ -2997,7 +2879,6 @@ lvgl:
                   height: 26
                   align: TOP_MID
                   y: 90
-                  group: dial_group
                   widgets:
                     - label:
                         text: "\U000F0599"
@@ -3030,7 +2911,6 @@ lvgl:
                   height: 26
                   align: TOP_MID
                   y: 120
-                  group: dial_group
                   widgets:
                     - label:
                         text: "\U000F05A9"
@@ -3063,7 +2943,6 @@ lvgl:
                   height: 26
                   align: TOP_MID
                   y: 150
-                  group: dial_group
                   widgets:
                     - label:
                         text: "\U000F057E"
@@ -3096,7 +2975,6 @@ lvgl:
                   height: 26
                   align: TOP_MID
                   y: 180
-                  group: dial_group
                   widgets:
                     - label:
                         text: "\U000F0594"
@@ -3129,7 +3007,6 @@ lvgl:
                   height: 26
                   align: TOP_MID
                   y: 210
-                  group: dial_group
                   widgets:
                     - label:
                         text: "\U000F0003"

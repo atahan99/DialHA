@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Assert Volos industrial UI invariants in YAML (no device needed)."""
+"""Assert the UI invariants that cost real debugging time. No device needed.
+
+Each check below exists because breaking it produced a bug that was not
+obvious from the YAML — not to police style. `python check_ui.py`.
+"""
 
 from __future__ import annotations
 
@@ -10,117 +14,93 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 ui = (ROOT / "packages" / "ui.yaml").read_text()
 hw = (ROOT / "packages" / "hardware.yaml").read_text()
-ent_path = ROOT / "packages" / "entities.yaml"
-if not ent_path.exists():
-    print("FAIL:\n  packages/entities.yaml missing")
-    sys.exit(1)
-ent = ent_path.read_text()
+ac = (ROOT / "packages" / "ac.yaml").read_text()
+tm = (ROOT / "packages" / "time.yaml").read_text()
+wx = (ROOT / "packages" / "weather.yaml").read_text()
+ent = (ROOT / "packages" / "entities.yaml").read_text()
 ex = (ROOT / "secrets.yaml.example").read_text()
 main = (ROOT / "m5dial.yaml").read_text()
 
 fails: list[str] = []
 
-if "theme.yaml" in main or "packages/theme" in main:
-    fails.append("theme package should be removed from m5dial.yaml")
-if (ROOT / "packages" / "theme.yaml").exists():
-    fails.append("packages/theme.yaml should be deleted")
 
-if "ui_sound_enabled" not in ui or 'initial_value: "false"' not in ui:
-    fails.append("ui_sound_enabled missing or not default false")
-if "id: ui_beep" not in ui:
-    fails.append("ui_beep script missing")
-if re.search(r"^\s+- rtttl\.play:", ui, re.M):
-    fails.append("ui.yaml still has direct rtttl.play")
-if re.search(r"^\s+- rtttl\.play:", hw, re.M):
-    fails.append("hardware.yaml still has direct rtttl.play")
-
-for bid in (
-    "btn_seg_settings",
-    "btn_seg_ac",
-    "btn_seg_plugs",
-    "btn_seg_lights",
-    "btn_seg_time",
-    "btn_seg_scenes",
-    "btn_home_center",
-):
-    if bid not in ui:
-        fails.append(f"pie launcher missing {bid}")
-
-if "page_scenes" not in ui:
-    fails.append("page_scenes missing")
-if "lbl_clock_brand" in ui or 'text: "DIAL"' in ui or 'text: "VOLOS"' in ui:
-    fails.append("brand wordmark still present on clock")
-if "id: clock_meter" not in ui:
-    fails.append("clock_meter missing")
-if "bg_color: 0x0B0F11" not in ui:
-    fails.append("Volos background token missing")
-if "0xFFD400" not in ui:
-    fails.append("amber selection token missing")
-if "scene_1_entity" not in ent:
-    fails.append("entities.yaml missing scene substitutions")
-if "light_4_entity" not in ent:
-    fails.append("entities.yaml missing light_3/4")
-if "timezone: !secret timezone" not in hw:
-    fails.append("hardware.yaml missing timezone secret")
-if "platform: sntp" not in hw:
-    fails.append("SNTP time source missing")
-if 'timezone:' not in ex:
-    fails.append("secrets.yaml.example missing timezone")
-if "theme_cyberpunk" in ui or "toggle_theme" in ui:
-    fails.append("cyberpunk theme remnants still in ui.yaml")
-if "lbl_launcher_sel" in ui:
-    fails.append("launcher selection title should be removed")
-if "display_rotation" not in ui or "row_set_rotate" not in ui:
-    fails.append("Rotate setting missing")
-if "id: ac_refresh" not in ui or "lbl_ac_main" not in ui:
-    fails.append("AC refresh / main label missing")
-if "btn_ac_focus_fan" not in ui or "ac_dial_adjust" not in ui:
-    fails.append("AC fan/swing dial focus missing")
-tm = (ROOT / "packages" / "time.yaml").read_text()
-for s in ("cities_refresh", "pomo_refresh", "sw_refresh", "timer_refresh",
-          "weather_refresh", "time_hub_focus"):
-    if f"id: {s}" not in tm:
-        fails.append(f"time.yaml missing {s} script")
-if "id: time_mode" in tm:
-    fails.append("time_mode is superseded by one-page-per-function navigation")
-for pg in ("page_cities", "page_pomodoro", "page_stopwatch", "page_timer", "page_weather"):
-    if f"- id: {pg}" not in ui:
-        fails.append(f"{pg} missing")
-if "city_1_name" not in ent or "home_utc_offset" not in ent:
-    fails.append("entities missing configurable cities")
-if "ha_weather" in ent:
-    fails.append("HA weather entities should be gone (Open-Meteo now)")
-
-wx = (ROOT / "packages" / "weather.yaml").read_text()
-if "api.open-meteo.com" not in wx or "!secret latitude" not in wx:
-    fails.append("weather.yaml missing Open-Meteo request / secret coordinates")
-if "packages/weather.yaml" not in main:
-    fails.append("weather package not included in m5dial.yaml")
-for key in ("latitude:", "longitude:", "weather_place:"):
-    if key not in ex:
-        fails.append(f"secrets.yaml.example missing {key}")
-
-ac = (ROOT / "packages" / "ac.yaml").read_text()
-if "non_blocking: false" not in ac:
-    fails.append("IR transmitter must send blocking (LVGL starves chunked sends)")
-if "transmit_raw" not in ac or "ac_tx_code" not in ac:
-    fails.append("AC frame synthesiser missing from ac.yaml")
-if "0x88C0051" not in ac:
-    fails.append("Arcelik OFF literal missing from ac.yaml")
-if "sum & 0xF" not in ac:
-    fails.append("Arcelik checksum (sum of first six nibbles) missing")
-for gid in ("ac_power", "ac_temp", "ac_fan"):
-    if f"id: {gid}" not in ac:
-        fails.append(f"AC state global {gid} missing")
-# Settings must survive an immediate power cut, so they persist through
-# settings_store.h rather than restore_value (which only stages on a 1 Hz poll).
 def strip_comments(text: str) -> str:
-    """Drop whole-line YAML comments so prose about a setting isn't mistaken for it."""
+    """Drop whole-line YAML comments so prose about a rule isn't read as the rule."""
     return "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
 
 
+# —— Styles ————————————————————————————————————————————————————————
+# Every `styles: st_x` must name a real style_definitions entry; a typo is
+# silently ignored by LVGL and the widget just renders unstyled.
+defined = set()
+in_defs = False
+defs_indent = 0
+for line in ui.splitlines():
+    if re.match(r"^(\s*)style_definitions:\s*$", line):
+        in_defs, defs_indent = True, len(line) - len(line.lstrip())
+        continue
+    if in_defs:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) <= defs_indent and re.match(r"^\s*[A-Za-z_][\w-]*:", line):
+            break
+        if m := re.match(r"^\s+-\s+id:\s+(st_\S+)\s*$", line):
+            defined.add(m.group(1).strip("\"'"))
+if not defined:
+    fails.append("no style_definitions in ui.yaml")
+for ref in set(re.findall(r"^\s+styles:\s+([A-Za-z0-9_]+)\s*$", ui, re.M)) - defined:
+    fails.append(f"styles: {ref} is referenced but never defined")
+
+# —— Input model ———————————————————————————————————————————————————
+# The encoder and buttons drive scripts directly. An `encoders:` indev adds a
+# second, invisible selection (LVGL group focus) on top of the *_index globals
+# that actually paint the amber border — and ESPHome puts every widget of every
+# page in one flat group, so focus wanders onto other pages' widgets and the
+# front button clicks them.
+if re.search(r"^\s+encoders:", ui, re.M):
+    fails.append("lvgl encoders: reintroduces a second selection model — see the note in ui.yaml")
+if "dial_group" in ui:
+    fails.append("group: dial_group reintroduces LVGL group focus")
+
+# front_action must dispatch on a snapshot of the page. Its handlers navigate,
+# so a live `lvgl.page.is_showing` chain fires the *new* page's handler in the
+# same press (one click on the launcher used to land on Cities).
+front = strip_comments(ui.split("- id: front_action", 1)[1].split("\n  - id: ", 1)[0])
+if "lvgl.page.is_showing" in front:
+    fails.append("front_action must test id(front_page), not lvgl.page.is_showing")
+if "front_page) = lv_screen_active()" not in front:
+    fails.append("front_action must snapshot the active page first")
+
+# The encoder must be able to reach every settings row.
+n_rows = len(re.findall(r"id: row_set_\w+", strip_comments(ui))) // 2
+if n_rows and f"% {n_rows};" not in ui:
+    fails.append(f"settings has {n_rows} rows but the encoder does not wrap at {n_rows}")
+
+# Lights: the dial sets brightness, and a card tap selects before it toggles
+# (see README "Lights"). Wiring a card straight to light_toggle skips the
+# select-first step.
+if "light_bri_step" not in ui:
+    fails.append("the Lights page dial should drive brightness via light_bri_step")
+lights_page = ui.split("- id: page_lights", 1)[1].split("\n    - id: page_", 1)[0]
+if "light_toggle" in lights_page or lights_page.count("light_card_tap") != 4:
+    fails.append("each light card should go through light_card_tap, not light_toggle")
+if re.search(r"page_lights\n\s+then:\n\s+- lambda: \"id\(light_index\)", ui):
+    fails.append("the encoder should no longer move the Lights selection")
+
+# —— Agent bridge ——————————————————————————————————————————————————
+for action in ("ui_key", "ui_screenshot"):
+    if f"action: {action}" not in ui:
+        fails.append(f"api action {action} missing — scripts/dial.py needs it")
+if "include/agent.h" not in main:
+    fails.append("m5dial.yaml does not include include/agent.h")
+
+# —— Persistence ———————————————————————————————————————————————————
+# Settings must survive an immediate power cut, so they persist through
+# settings_store.h rather than restore_value (which only stages on a 1 Hz poll).
 if "restore_value" in strip_comments(ac):
     fails.append("ac.yaml should persist via settings_store.h, not restore_value")
+if "restore_value: true" in strip_comments(ui):
+    fails.append("ui.yaml globals should persist via settings_store.h")
 if "id: ac_persist" not in ac or "m5dial::commit()" not in ac:
     fails.append("ac.yaml missing the ac_persist script")
 store = (ROOT / "include" / "settings_store.h").read_text()
@@ -130,38 +110,49 @@ for key in ("KEY_ROTATION", "KEY_NIGHT", "KEY_AP", "KEY_SOUND",
         fails.append(f"settings_store.h missing {key}")
     if key not in ui and key not in ac:
         fails.append(f"{key} is defined but never used")
-if "restore_value: true" in strip_comments(ui):
-    fails.append("ui.yaml globals should persist via settings_store.h")
-if "ac_learning" in ac or "ir_cool_temps" in ac:
-    fails.append("raw learn/replay is superseded by the synthesiser")
-if "platform: coolix" in ac:
-    fails.append("Coolix is the wrong protocol for 09325 A")
-# The encoder must be able to reach every settings row.
-n_rows = len(re.findall(r"id: row_set_\w+", strip_comments(ui))) // 2
-if n_rows and f"% {n_rows};" not in ui:
-    fails.append(f"settings has {n_rows} rows but the encoder does not wrap at {n_rows}")
-if "id: set_list" not in ui or "scroll_dir: VER" not in ui:
-    fails.append("settings list should be a vertical scroll container")
-for lbl in ("lbl_clock_mon", "lbl_clock_ampm", "id: clock_scale"):
-    if lbl not in ui:
-        fails.append(f"clock face missing {lbl}")
+
+# —— AC / IR ———————————————————————————————————————————————————————
+if "non_blocking: false" not in ac:
+    fails.append("IR transmitter must send blocking (LVGL starves chunked sends)")
+if "transmit_raw" not in ac or "ac_tx_code" not in ac:
+    fails.append("AC frame synthesiser missing from ac.yaml")
+if "0x88C0051" not in ac:
+    fails.append("Arcelik OFF literal missing from ac.yaml")
+if "sum & 0xF" not in ac:
+    fails.append("Arcelik checksum (sum of first six nibbles) missing")
+if "bits < 28" not in ac:
+    fails.append("the receive decoder must stop at 28 bits or it invents a 29th")
+for gid in ("ac_power", "ac_temp", "ac_fan"):
+    if f"id: {gid}" not in ac:
+        fails.append(f"AC state global {gid} missing")
 if "ac_commit" not in ui:
     fails.append("encoder must debounce through ac_commit, not send per detent")
 
-page_ac = ui.split("- id: page_ac", 1)[1].split("\n    - id: page_", 1)[0]
-if "id: arc_ac" not in page_ac:
-    fails.append("AC page missing temperature arc")
-if "id: bar_ac" in page_ac:
-    fails.append("AC bar should be replaced by the arc gauge")
-if "id: btn_ac_power" not in page_ac or "ac_power_toggle" not in page_ac:
-    fails.append("AC page missing power toggle")
-if "°C" not in ui:
-    fails.append("AC must show °C (spec: Celsius with degree sign)")
+# —— Pages and sources —————————————————————————————————————————————
+for pg in ("page_clock", "page_launcher", "page_ac", "page_lights", "page_plugs",
+           "page_scenes", "page_settings", "page_time", "page_cities",
+           "page_pomodoro", "page_stopwatch", "page_timer", "page_weather"):
+    if f"- id: {pg}" not in ui:
+        fails.append(f"{pg} missing")
+for s in ("cities_refresh", "pomo_refresh", "sw_refresh", "timer_refresh",
+          "weather_refresh", "time_hub_focus"):
+    if f"id: {s}" not in tm:
+        fails.append(f"time.yaml missing {s} script")
+if "timezone: !secret timezone" not in hw or "platform: sntp" not in hw:
+    fails.append("hardware.yaml missing SNTP / the timezone secret")
+if "api.open-meteo.com" not in wx or "!secret latitude" not in wx:
+    fails.append("weather.yaml missing Open-Meteo request / secret coordinates")
+for key in ("timezone:", "latitude:", "longitude:", "weather_place:"):
+    if key not in ex:
+        fails.append(f"secrets.yaml.example missing {key}")
+for key in ("scene_1_entity", "light_4_entity", "city_1_name", "home_utc_offset"):
+    if key not in ent:
+        fails.append(f"entities.yaml missing {key}")
 
-# Round display: the panel is a 240px circle (r=120), so the *corner* of every
-# widget must stay inside it or it is physically clipped by the glass. Budget
-# r<=114 leaves a little margin for the bezel. Applies to every page.
-# btn_clock_wake is the deliberate full-screen tap target and is exempt.
+# —— Round display geometry ————————————————————————————————————————
+# The panel is a 240px circle (r=120), so the *corner* of every widget must stay
+# inside it or the glass physically clips it. r<=114 leaves margin for the
+# bezel. btn_clock_wake is the deliberate full-screen tap target.
 EXEMPT = {"btn_clock_wake"}
 MIN_TOUCH_H = 24  # comfortable finger target
 
@@ -184,18 +175,13 @@ for page_name, body in zip(*[iter(re.split(r"\n    - id: (page_\w+)", ui)[1:])] 
         dy = abs(geom.get("y", 0)) + geom["height"] / 2
         radius = (dx * dx + dy * dy) ** 0.5
         if radius > 114:
-            fails.append(
-                f"{page_name}: {name} corner at r={radius:.0f} is clipped by the round display"
-            )
+            fails.append(f"{page_name}: {name} corner at r={radius:.0f} is clipped by the round display")
         if kind == "button" and geom["height"] < MIN_TOUCH_H:
-            fails.append(
-                f"{page_name}: {name} is only {geom['height']}px tall (min {MIN_TOUCH_H} for touch)"
-            )
+            fails.append(f"{page_name}: {name} is only {geom['height']}px tall (min {MIN_TOUCH_H} for touch)")
 
 if fails:
     print("FAIL:")
     for f in fails:
         print(" ", f)
     sys.exit(1)
-print("OK: ui invariants hold")
-sys.exit(0)
+print(f"OK: ui invariants hold ({len(defined)} styles defined)")

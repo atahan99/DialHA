@@ -4,3 +4,5 @@
 /.esphome/
 /secrets.yaml
 /firmware/*.bin
+# screenshots from scripts/dial.py
+/shot*.png

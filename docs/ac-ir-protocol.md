@@ -318,14 +318,15 @@ without pointing the emitter at the AC, and it costs nothing.
 - **Synthesises** every frame — `ac_tx_code` expands a 28-bit value into the raw
   timing vector; `ac_tx_state` builds the value from live temp/fan and computes
   the checksum.
-- **Persists** `ac_power` / `ac_temp` / `ac_fan` with `restore_value: true`, so
-  state survives reboot and OTA. Nothing is ever learned.
+- **Persists** `ac_power` / `ac_temp` / `ac_fan` through
+  [`include/settings_store.h`](../include/settings_store.h), so state survives
+  reboot, OTA *and* an immediate power cut. Nothing is ever learned.
 - **Decodes incoming frames** with the same field map, so pressing the physical
   remote updates the Dial's display (guarded by `ac_rx_guard` so the Dial
   ignores its own emission).
 - **Debounces the encoder** via `ac_commit` (`mode: restart`, 400 ms), so a spin
   from 18 to 30 sends exactly one command instead of twelve.
-- **Repeats each command 3×** (`ac_tx_repeats`, 40 ms apart). The handheld remote
+- **Repeats each command 5×** (`ac_tx_repeats`, 40 ms apart). The handheld remote
   sends once, but its emitter is much stronger than the Unit IR's single LED, so
   a marginal aim drops frames. Safe because every frame is absolute state — the
   remote itself re-sends an identical frame when you press TEMP+ at 30 °C.

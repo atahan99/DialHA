@@ -188,43 +188,24 @@ script:
             fmt_hhmm(buf, sizeof(buf), t.hour, t.minute, id(clock_24h));
             return std::string(buf);
 
+  # Ring order: 0 cities 1 pomodoro 2 stopwatch 3 timer 4 weather
   - id: time_hub_focus
     then:
       - lambda: |-
-          int i = id(time_hub_index);
-          if (i < 0) i = 4;
-          if (i > 4) i = 0;
-          id(time_hub_index) = i;
-      - lvgl.widget.update:
-          id: btn_hub_cities
-          border_color: !lambda "return id(time_hub_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: btn_hub_pomo
-          border_color: !lambda "return id(time_hub_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: btn_hub_sw
-          border_color: !lambda "return id(time_hub_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: btn_hub_timer
-          border_color: !lambda "return id(time_hub_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.widget.update:
-          id: btn_hub_wx
-          border_color: !lambda "return id(time_hub_index) == 4 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);"
-      - lvgl.label.update:
-          id: icon_hub_cities
-          text_color: !lambda "return id(time_hub_index) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x63E7F2);"
-      - lvgl.label.update:
-          id: icon_hub_pomo
-          text_color: !lambda "return id(time_hub_index) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0xFF8A00);"
-      - lvgl.label.update:
-          id: icon_hub_sw
-          text_color: !lambda "return id(time_hub_index) == 2 ? lv_color_hex(0xFFD400) : lv_color_hex(0x9EA7AA);"
-      - lvgl.label.update:
-          id: icon_hub_timer
-          text_color: !lambda "return id(time_hub_index) == 3 ? lv_color_hex(0xFFD400) : lv_color_hex(0x9EA7AA);"
-      - lvgl.label.update:
-          id: icon_hub_wx
-          text_color: !lambda "return id(time_hub_index) == 4 ? lv_color_hex(0xFFD400) : lv_color_hex(0x63E7F2);"
+          int sel = id(time_hub_index);
+          if (sel < 0) sel = 4;
+          if (sel > 4) sel = 0;
+          id(time_hub_index) = sel;
+          lv_obj_t *btns[] = {id(btn_hub_cities), id(btn_hub_pomo), id(btn_hub_sw),
+                              id(btn_hub_timer), id(btn_hub_wx)};
+          lv_obj_t *icons[] = {id(icon_hub_cities), id(icon_hub_pomo), id(icon_hub_sw),
+                               id(icon_hub_timer), id(icon_hub_wx)};
+          const uint32_t tint[] = {0x63E7F2, 0xFF8A00, 0x9EA7AA, 0x9EA7AA, 0x63E7F2};
+          for (int i = 0; i < 5; i++) {
+            bool on = i == sel;
+            lv_obj_set_style_border_color(btns[i], lv_color_hex(on ? 0xFFD400 : 0x333B3E), 0);
+            lv_obj_set_style_text_color(icons[i], lv_color_hex(on ? 0xFFD400 : tint[i]), 0);
+          }
 
   - id: time_hub_open
     then:
@@ -540,86 +521,29 @@ script:
             snprintf(buf, sizeof(buf), "%.0f / %.0f°   %.0f%%",
                      id(wx_tmin), id(wx_tmax), id(wx_hum));
             return std::string(buf);
-      - lvgl.label.update:
-          id: icon_wx_h0
-          text: !lambda |-
-            if (0 >= (int) id(wx_hr_code).size()) return std::string("");
-            return std::string(wmo_icon(id(wx_hr_code)[0]));
-      - lvgl.label.update:
-          id: lbl_wx_h0
-          text: !lambda |-
-            if (0 >= (int) id(wx_hr_hour).size()) return std::string("");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%02d", id(wx_hr_hour)[0]);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_wxt_h0
-          text: !lambda |-
-            if (0 >= (int) id(wx_hr_temp).size() || isnan(id(wx_hr_temp)[0]))
-              return std::string("");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%.0f°", id(wx_hr_temp)[0]);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: icon_wx_h1
-          text: !lambda |-
-            if (1 >= (int) id(wx_hr_code).size()) return std::string("");
-            return std::string(wmo_icon(id(wx_hr_code)[1]));
-      - lvgl.label.update:
-          id: lbl_wx_h1
-          text: !lambda |-
-            if (1 >= (int) id(wx_hr_hour).size()) return std::string("");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%02d", id(wx_hr_hour)[1]);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_wxt_h1
-          text: !lambda |-
-            if (1 >= (int) id(wx_hr_temp).size() || isnan(id(wx_hr_temp)[1]))
-              return std::string("");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%.0f°", id(wx_hr_temp)[1]);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: icon_wx_h2
-          text: !lambda |-
-            if (2 >= (int) id(wx_hr_code).size()) return std::string("");
-            return std::string(wmo_icon(id(wx_hr_code)[2]));
-      - lvgl.label.update:
-          id: lbl_wx_h2
-          text: !lambda |-
-            if (2 >= (int) id(wx_hr_hour).size()) return std::string("");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%02d", id(wx_hr_hour)[2]);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_wxt_h2
-          text: !lambda |-
-            if (2 >= (int) id(wx_hr_temp).size() || isnan(id(wx_hr_temp)[2]))
-              return std::string("");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%.0f°", id(wx_hr_temp)[2]);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: icon_wx_h3
-          text: !lambda |-
-            if (3 >= (int) id(wx_hr_code).size()) return std::string("");
-            return std::string(wmo_icon(id(wx_hr_code)[3]));
-      - lvgl.label.update:
-          id: lbl_wx_h3
-          text: !lambda |-
-            if (3 >= (int) id(wx_hr_hour).size()) return std::string("");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%02d", id(wx_hr_hour)[3]);
-            return std::string(buf);
-      - lvgl.label.update:
-          id: lbl_wxt_h3
-          text: !lambda |-
-            if (3 >= (int) id(wx_hr_temp).size() || isnan(id(wx_hr_temp)[3]))
-              return std::string("");
-            char buf[12];
-            snprintf(buf, sizeof(buf), "%.0f°", id(wx_hr_temp)[3]);
-            return std::string(buf);
+      - lambda: |-
+          // Four 3-hourly slots. The strip runs out at the end of the day, so
+          // a slot with no data is blanked rather than left showing yesterday.
+          lv_obj_t *icons[] = {id(icon_wx_h0), id(icon_wx_h1), id(icon_wx_h2), id(icon_wx_h3)};
+          lv_obj_t *hours[] = {id(lbl_wx_h0), id(lbl_wx_h1), id(lbl_wx_h2), id(lbl_wx_h3)};
+          lv_obj_t *temps[] = {id(lbl_wxt_h0), id(lbl_wxt_h1), id(lbl_wxt_h2), id(lbl_wxt_h3)};
+          char buf[12];
+          for (int i = 0; i < 4; i++) {
+            lv_label_set_text(icons[i], i < (int) id(wx_hr_code).size()
+                                            ? wmo_icon(id(wx_hr_code)[i]) : "");
+            if (i < (int) id(wx_hr_hour).size()) {
+              snprintf(buf, sizeof(buf), "%02d", id(wx_hr_hour)[i]);
+              lv_label_set_text(hours[i], buf);
+            } else {
+              lv_label_set_text(hours[i], "");
+            }
+            if (i < (int) id(wx_hr_temp).size() && !isnan(id(wx_hr_temp)[i])) {
+              snprintf(buf, sizeof(buf), "%.0f°", id(wx_hr_temp)[i]);
+              lv_label_set_text(temps[i], buf);
+            } else {
+              lv_label_set_text(temps[i], "");
+            }
+          }
 
   # Thin wrappers so on_click / encoder actions can be parameterless
   - id: city_next
