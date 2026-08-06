@@ -6,3 +6,7 @@
 /firmware/*.bin
 # screenshots from scripts/dial.py
 /shot*.png
+.DS_Store
+/.venv/
+__pycache__/
+*.pyc
