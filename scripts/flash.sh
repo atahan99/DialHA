@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile → copy firmware/m5dial.bin → upload over USB.
+# Compile → copy firmware/dialha.bin → upload over USB.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -59,8 +59,8 @@ if [[ -z "$BUILD_BIN" || ! -f "$BUILD_BIN" ]]; then
   exit 1
 fi
 
-cp -f "$BUILD_BIN" "$ROOT/firmware/m5dial.bin"
-echo "Copied $(basename "$BUILD_BIN") → firmware/m5dial.bin ($(wc -c < "$ROOT/firmware/m5dial.bin") bytes)"
+cp -f "$BUILD_BIN" "$ROOT/firmware/dialha.bin"
+echo "Copied $(basename "$BUILD_BIN") → firmware/dialha.bin ($(wc -c < "$ROOT/firmware/dialha.bin") bytes)"
 
 "$ESPHOME" upload "$ROOT/m5dial.yaml" --device "$DEVICE"
 echo "Flash OK."

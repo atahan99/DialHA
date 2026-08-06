@@ -1,4 +1,4 @@
-# M5Dial — Home Assistant Controller
+# DialHA
 
 ESPHome firmware for the [M5Stack Dial](https://docs.m5stack.com/en/core/M5Dial): circular LVGL UI, Home Assistant control, and local IR climate for an Arçelik 09325 A AC via [Unit IR (U002)](https://docs.m5stack.com/en/unit/ir) on PORT.B.
 
@@ -49,7 +49,7 @@ is neither.
 esphome logs m5dial.yaml --device 192.168.1.101
 ```
 
-`scripts/flash.sh` compiles, copies the factory image to `firmware/m5dial.bin`
+`scripts/flash.sh` compiles, copies the factory image to `firmware/dialha.bin`
 and uploads. See [firmware/README.md](firmware/README.md) for flashing without
 ESPHome, recovering a wedged USB port — and for why **the built `.bin` contains
 your Wi-Fi password and API key** and must never be shared.
@@ -238,7 +238,7 @@ esphome config m5dial.yaml
 m5dial.yaml              # entry
 check_ui.py              # UI invariants (styles, geometry, input model, persistence)
 scripts/
-  flash.sh                # compile → firmware/m5dial.bin → upload (USB or OTA)
+  flash.sh                # compile → firmware/dialha.bin → upload (USB or OTA)
   dial.py                 # screenshots + scripted input + logs over the API
   ac_test.py              # drive the AC over the API for bench testing
   decode_ir.py            # decode ESPHome raw IR dumps

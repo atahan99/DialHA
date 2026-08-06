@@ -1,6 +1,6 @@
 # Firmware artifacts
 
-`m5dial.bin` is the **full factory image**: bootloader + partition table + app,
+`dialha.bin` is the **full factory image**: bootloader + partition table + app,
 written at offset `0x0`. It is not the OTA-only binary — use it for a first
 flash, a recovery flash, or a blank Dial.
 
@@ -11,7 +11,7 @@ Gitignored, and it must stay that way — see the warning below.
 ```bash
 # from m5dial/
 esphome compile m5dial.yaml
-cp .esphome/build/m5-dial/build/firmware.factory.bin firmware/m5dial.bin
+cp .esphome/build/m5-dial/build/firmware.factory.bin firmware/dialha.bin
 ```
 
 Or in one step, which also uploads:
@@ -25,7 +25,7 @@ Or in one step, which also uploads:
 ## Flash it directly
 
 ```bash
-esptool --chip esp32s3 --port /dev/cu.usbmodem2101 write_flash 0x0 firmware/m5dial.bin
+esptool --chip esp32s3 --port /dev/cu.usbmodem2101 write_flash 0x0 firmware/dialha.bin
 ```
 
 If the port does not appear: hold **BOOT (G0)**, tap **RESET**, release **BOOT**.
