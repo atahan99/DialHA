@@ -1,9 +1,12 @@
 # Time functions — one dedicated page each, reached from the Time hub ring.
 #   page_time (hub) -> page_cities | page_pomodoro | page_stopwatch
 #                      page_timer  | page_weather
-# Cities: edit city_* / home_utc_offset in packages/entities.yaml
+# Cities: edit city_*_name / city_*_tz in packages/entities.yaml
 # Weather: fetched in packages/weather.yaml (Open-Meteo); tap the hero to refresh
 # Home clock face: lbl_clock_main / dow / dom / ind_clock_min (page_clock)
+
+substitutions:
+  city_zones: '"${city_1_tz}", "${city_2_tz}", "${city_3_tz}", "${city_4_tz}", "${city_5_tz}"'
 
 globals:
   - id: city_index
@@ -68,8 +71,6 @@ interval:
                 id: lbl_clock_main
                 text: !lambda |-
                   auto t = id(sntp_time).now();
-                  if (!t.is_valid()) t = id(ha_time).now();
-                  if (!t.is_valid()) t = id(rtctime).now();
                   if (!t.is_valid()) return std::string("--:--");
                   char buf[16];
                   fmt_hhmm(buf, sizeof(buf), t.hour, t.minute, id(clock_24h));
@@ -79,24 +80,18 @@ interval:
                 text: !lambda |-
                   if (id(clock_24h)) return std::string("");
                   auto t = id(sntp_time).now();
-                  if (!t.is_valid()) t = id(ha_time).now();
-                  if (!t.is_valid()) t = id(rtctime).now();
                   if (!t.is_valid()) return std::string("");
                   return std::string(ampm_of(t.hour));
             - lvgl.label.update:
                 id: lbl_clock_mon
                 text: !lambda |-
                   auto t = id(sntp_time).now();
-                  if (!t.is_valid()) t = id(ha_time).now();
-                  if (!t.is_valid()) t = id(rtctime).now();
                   if (!t.is_valid()) return std::string("---");
                   return std::string(month_abbr(t.month));
             - lvgl.label.update:
                 id: lbl_clock_dow
                 text: !lambda |-
                   auto t = id(sntp_time).now();
-                  if (!t.is_valid()) t = id(ha_time).now();
-                  if (!t.is_valid()) t = id(rtctime).now();
                   static const char* days[] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
                   if (!t.is_valid() || t.day_of_week < 1 || t.day_of_week > 7)
                     return std::string("---");
@@ -105,8 +100,6 @@ interval:
                 id: lbl_clock_dom
                 text: !lambda |-
                   auto t = id(sntp_time).now();
-                  if (!t.is_valid()) t = id(ha_time).now();
-                  if (!t.is_valid()) t = id(rtctime).now();
                   char buf[8];
                   if (!t.is_valid()) return std::string("--");
                   snprintf(buf, sizeof(buf), "%02d", t.day_of_month);
@@ -115,8 +108,6 @@ interval:
                 id: ind_clock_min
                 value: !lambda |-
                   auto t = id(sntp_time).now();
-                  if (!t.is_valid()) t = id(ha_time).now();
-                  if (!t.is_valid()) t = id(rtctime).now();
                   if (!t.is_valid()) return 0.0f;
                   return (float)t.minute + (t.second / 60.0f);
       - if:
@@ -181,8 +172,6 @@ script:
           id: lbl_hub_clock
           text: !lambda |-
             auto t = id(sntp_time).now();
-            if (!t.is_valid()) t = id(ha_time).now();
-            if (!t.is_valid()) t = id(rtctime).now();
             if (!t.is_valid()) return std::string("--:--");
             char buf[16];
             fmt_hhmm(buf, sizeof(buf), t.hour, t.minute, id(clock_24h));
@@ -259,56 +248,34 @@ script:
       - lvgl.label.update:
           id: lbl_city_time
           text: !lambda |-
-            // Standard offsets + per-city DST rule (see include/tz_dst.h).
-            // The rule is evaluated on the UTC date, which is exact except for
-            // a few hours around each switchover.
-            static const int offs[] = {
-              ${city_1_utc_offset}, ${city_2_utc_offset}, ${city_3_utc_offset},
-              ${city_4_utc_offset}, ${city_5_utc_offset}
-            };
-            static const int rules[] = {
-              ${city_1_dst}, ${city_2_dst}, ${city_3_dst},
-              ${city_4_dst}, ${city_5_dst}
-            };
-            int i = id(city_index) % 5;
-            auto t = id(sntp_time).now();
-            if (!t.is_valid()) t = id(ha_time).now();
-            if (!t.is_valid()) t = id(rtctime).now();
-            if (!t.is_valid()) return std::string("--:--");
-            // Local home time -> UTC (home carries its own rule too)
-            int home_off = ${home_utc_offset} +
-                dst_offset(${home_dst}, t.year, t.month, t.day_of_month);
-            int uy = t.year, um = t.month, ud = t.day_of_month;
-            int uh = t.hour - home_off;
-            if (uh < 0) {
-              uh += 24;
-              if (--ud < 1) {
-                if (--um < 1) { um = 12; uy--; }
-                ud = tz_days_in_month(uy, um);
-              }
-            } else if (uh >= 24) {
-              uh -= 24;
-              if (++ud > tz_days_in_month(uy, um)) {
-                ud = 1;
-                if (++um > 12) { um = 1; uy++; }
-              }
-            }
-            int h = (uh + offs[i] + dst_offset(rules[i], uy, um, ud) + 48) % 24;
+            static const char *const zones[] = {${city_zones}};
+            struct tm c;
+            if (!city_tz::local_now(zones[id(city_index) % 5], &c))
+              return std::string("--:--");
             char buf[16];
-            fmt_hhmm(buf, sizeof(buf), h, t.minute, id(clock_24h));
+            fmt_hhmm(buf, sizeof(buf), c.tm_hour, c.tm_min, id(clock_24h));
             if (!id(clock_24h)) {
               size_t n = strlen(buf);
-              snprintf(buf + n, sizeof(buf) - n, " %s", ampm_of(h));
+              snprintf(buf + n, sizeof(buf) - n, " %s", ampm_of(c.tm_hour));
             }
             return std::string(buf);
       - lvgl.label.update:
           id: lbl_city_name
           text: !lambda |-
-            static const char* names[] = {
+            static const char *const names[] = {
               "${city_1_name}", "${city_2_name}", "${city_3_name}",
               "${city_4_name}", "${city_5_name}"
             };
-            return std::string(names[id(city_index) % 5]);
+            static const char *const zones[] = {${city_zones}};
+            static const char *const days[] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
+            int i = id(city_index) % 5;
+            std::string s = names[i];
+            // Name the weekday when the city is already on another date.
+            struct tm c;
+            auto home = id(sntp_time).now();
+            if (home.is_valid() && city_tz::local_now(zones[i], &c) && c.tm_mday != home.day_of_month)
+              s = s + " (" + days[c.tm_wday] + ")";
+            return s;
       - lvgl.label.update:
           id: lbl_city_dots
           text: !lambda |-

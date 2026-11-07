@@ -1,0 +1,234 @@
+# AC page: temperature arc, fan and power chips. IR frames: packages/ac.yaml.
+
+script:
+  - id: open_ac
+    then:
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+      - lambda: "id(ac_focus) = 0;"
+      - lvgl.page.show: page_ac
+      - script.execute: ac_refresh
+  # Arçelik AC — every frame is synthesised in packages/ac.yaml; nothing is
+  # taught, so the page works straight after a reboot.
+  # ac_focus: 0 = temperature, 1 = fan
+  - id: ac_set_focus
+    parameters:
+      focus: int
+    then:
+      - lambda: |-
+          int f = focus;
+          if (f < 0) f = 0;
+          if (f > 1) f = 1;
+          id(ac_focus) = f;
+      - script.execute: ac_refresh
+
+  - id: ac_dial_adjust
+    parameters:
+      delta: int
+    then:
+      - lambda: |-
+          int d = (delta > 0) ? 1 : -1;
+          if (id(ac_focus) == 1) {
+            int f = id(ac_fan) + d;
+            if (f < 0) f = 5;
+            if (f > 5) f = 0;
+            id(ac_fan) = f;
+          } else {
+            int t = id(ac_temp) + d;
+            if (t < 18) t = 18;
+            if (t > 30) t = 30;
+            id(ac_temp) = t;
+          }
+      - script.execute: ac_refresh
+      # Dial can spin freely; one frame goes out 400ms after it settles
+      - script.execute: ac_commit
+
+  - id: ac_refresh
+    then:
+      - lvgl.arc.update:
+          id: arc_ac
+          value: !lambda "return id(ac_temp);"
+      - lvgl.label.update:
+          id: lbl_ac_main
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%d°C", id(ac_temp));
+            return std::string(buf);
+          text_color: !lambda |-
+            return id(ac_power) ? lv_color_hex(0xF4F7F8) : lv_color_hex(0x5A6467);
+      - lvgl.label.update:
+          id: lbl_ac_sub
+          text: !lambda |-
+            if (!id(ac_power))
+              return std::string("OFF");
+            static const char* fans[] = {"AUTO", "1", "2", "3", "4", "5"};
+            int f = id(ac_fan);
+            if (f < 0 || f > 5) f = 0;
+            char buf[24];
+            snprintf(buf, sizeof(buf), "COOL - FAN %s", fans[f]);
+            return std::string(buf);
+          text_color: !lambda |-
+            return id(ac_power) ? lv_color_hex(0x63E7F2) : lv_color_hex(0x9EA7AA);
+      - lvgl.label.update:
+          id: lbl_ac_power
+          text: !lambda |-
+            return std::string(id(ac_power) ? "ON" : "OFF");
+      - lvgl.widget.update:
+          id: btn_ac_power
+          border_color: !lambda |-
+            return id(ac_power) ? lv_color_hex(0x63E7F2) : lv_color_hex(0x333B3E);
+          bg_color: !lambda |-
+            return id(ac_power) ? lv_color_hex(0x0E3238) : lv_color_hex(0x0B0F11);
+      - lvgl.widget.update:
+          id: btn_ac_focus_temp
+          border_color: !lambda |-
+            return id(ac_focus) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);
+          bg_color: !lambda |-
+            return id(ac_focus) == 0 ? lv_color_hex(0x3A3200) : lv_color_hex(0x0B0F11);
+      - lvgl.widget.update:
+          id: btn_ac_focus_fan
+          border_color: !lambda |-
+            return id(ac_focus) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x333B3E);
+          bg_color: !lambda |-
+            return id(ac_focus) == 1 ? lv_color_hex(0x3A3200) : lv_color_hex(0x0B0F11);
+      # Icons follow focus/power so the chips read at a glance
+      - lvgl.label.update:
+          id: icon_ac_temp
+          text_color: !lambda |-
+            return id(ac_focus) == 0 ? lv_color_hex(0xFFD400) : lv_color_hex(0x9EA7AA);
+      - lvgl.label.update:
+          id: icon_ac_fan
+          text_color: !lambda |-
+            return id(ac_focus) == 1 ? lv_color_hex(0xFFD400) : lv_color_hex(0x9EA7AA);
+      - lvgl.label.update:
+          id: icon_ac_power
+          text_color: !lambda |-
+            return id(ac_power) ? lv_color_hex(0x63E7F2) : lv_color_hex(0x5A6467);
+
+lvgl:
+  pages:
+    # —— AC (synthesised Arçelik IR — see packages/ac.yaml) ——
+    # Arc shows 18-30°C. Encoder turns the focused field; TEMP/FAN pick which.
+    - id: page_ac
+      styles: st_bg
+      widgets:
+        - arc:
+            id: arc_ac
+            align: CENTER
+            y: -18
+            width: 164
+            height: 164
+            min_value: 18
+            max_value: 30
+            value: 24
+            adjustable: false
+            arc_width: 6
+            arc_color: 0x1B2427
+            indicator:
+              arc_width: 6
+              arc_color: 0x63E7F2
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -70
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "AC"
+        - label:
+            id: lbl_ac_main
+            styles: st_text
+            align: CENTER
+            y: -22
+            text_font: font_big
+            text: "24°C"
+        - label:
+            id: lbl_ac_sub
+            styles: st_text
+            align: CENTER
+            y: 8
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "OFF"
+        - button:
+            id: btn_ac_power
+            styles: st_chip
+            width: 52
+            height: 24
+            align: CENTER
+            x: -46
+            y: 58
+            border_color: 0x333B3E
+            widgets:
+              - label:
+                  id: icon_ac_power
+                  text: "\U000F0425"
+                  align: LEFT_MID
+                  x: 5
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+              - label:
+                  id: lbl_ac_power
+                  text: "OFF"
+                  align: RIGHT_MID
+                  x: -6
+                  text_font: font_label
+                  text_color: 0x63E7F2
+            on_click:
+              - script.execute: ac_power_toggle
+        - button:
+            id: btn_ac_focus_temp
+            styles: st_chip
+            width: 38
+            height: 24
+            align: CENTER
+            x: 0
+            y: 58
+            border_color: 0xFFD400
+            widgets:
+              - label:
+                  id: icon_ac_temp
+                  text: "\U000F050F"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute:
+                  id: ac_set_focus
+                  focus: 0
+        - button:
+            id: btn_ac_focus_fan
+            styles: st_chip
+            width: 38
+            height: 24
+            align: CENTER
+            x: 46
+            y: 58
+            border_color: 0x333B3E
+            widgets:
+              - label:
+                  id: icon_ac_fan
+                  text: "\U000F0210"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute:
+                  id: ac_set_focus
+                  focus: 1
+        - button:
+            id: btn_back_ac
+            styles: st_chip
+            width: 42
+            height: 24
+            align: CENTER
+            x: 0
+            y: 86
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back

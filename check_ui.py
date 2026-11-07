@@ -12,7 +12,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-ui = (ROOT / "packages" / "ui.yaml").read_text()
+UI_DIR = ROOT / "packages" / "ui"
+# base.yaml first: it holds style_definitions, which later checks refer to
+ui = "\n".join(p.read_text() for p in sorted(UI_DIR.glob("*.yaml"), key=lambda p: p.name != "base.yaml"))
 hw = (ROOT / "packages" / "hardware.yaml").read_text()
 ac = (ROOT / "packages" / "ac.yaml").read_text()
 tm = (ROOT / "packages" / "time.yaml").read_text()
@@ -20,6 +22,7 @@ wx = (ROOT / "packages" / "weather.yaml").read_text()
 ent = (ROOT / "packages" / "entities.yaml").read_text()
 ex = (ROOT / "secrets.yaml.example").read_text()
 main = (ROOT / "m5dial.yaml").read_text()
+debug = (ROOT / "packages" / "debug.yaml").read_text()
 
 fails: list[str] = []
 
@@ -47,7 +50,7 @@ for line in ui.splitlines():
         if m := re.match(r"^\s+-\s+id:\s+(st_\S+)\s*$", line):
             defined.add(m.group(1).strip("\"'"))
 if not defined:
-    fails.append("no style_definitions in ui.yaml")
+    fails.append("no style_definitions in packages/ui/base.yaml")
 for ref in set(re.findall(r"^\s+styles:\s+([A-Za-z0-9_]+)\s*$", ui, re.M)) - defined:
     fails.append(f"styles: {ref} is referenced but never defined")
 
@@ -58,7 +61,7 @@ for ref in set(re.findall(r"^\s+styles:\s+([A-Za-z0-9_]+)\s*$", ui, re.M)) - def
 # page in one flat group, so focus wanders onto other pages' widgets and the
 # front button clicks them.
 if re.search(r"^\s+encoders:", ui, re.M):
-    fails.append("lvgl encoders: reintroduces a second selection model — see the note in ui.yaml")
+    fails.append("lvgl encoders: reintroduces a second selection model — see the note in packages/ui/base.yaml")
 if "dial_group" in ui:
     fails.append("group: dial_group reintroduces LVGL group focus")
 
@@ -72,7 +75,7 @@ if "front_page) = lv_screen_active()" not in front:
     fails.append("front_action must snapshot the active page first")
 
 # The encoder must be able to reach every settings row.
-n_rows = len(re.findall(r"id: row_set_\w+", strip_comments(ui))) // 2
+n_rows = len(re.findall(r"id: row_set_\w+", strip_comments(ui)))
 if n_rows and f"% {n_rows};" not in ui:
     fails.append(f"settings has {n_rows} rows but the encoder does not wrap at {n_rows}")
 
@@ -88,11 +91,30 @@ if re.search(r"page_lights\n\s+then:\n\s+- lambda: \"id\(light_index\)", ui):
     fails.append("the encoder should no longer move the Lights selection")
 
 # —— Agent bridge ——————————————————————————————————————————————————
-for action in ("ui_key", "ui_screenshot"):
-    if f"action: {action}" not in ui:
-        fails.append(f"api action {action} missing — scripts/dial.py needs it")
-if "include/agent.h" not in main:
-    fails.append("m5dial.yaml does not include include/agent.h")
+for action in ("ui_key", "ui_screenshot", "ac_send_code", "ac_set_state"):
+    if f"action: {action}" not in debug:
+        fails.append(f"api action {action} missing from debug.yaml; scripts/ need it")
+if "include/agent.h" not in debug or "debug.yaml" not in main:
+    fails.append("the personal build must include packages/debug.yaml (agent.h)")
+
+# —— Public build ——————————————————————————————————————————————————
+# dialha.factory.yaml is published, so nothing it pulls in may read secrets.yaml.
+factory = (ROOT / "dialha.factory.yaml").read_text()
+for path in [ROOT / "dialha.factory.yaml", *sorted((ROOT / "packages").rglob("*.yaml"))]:
+    if path.name != "debug.yaml" and "!secret" in strip_comments(path.read_text()):
+        fails.append(f"{path.relative_to(ROOT)} uses !secret; the public build would need secrets.yaml")
+if "debug.yaml" in factory:
+    fails.append("dialha.factory.yaml must not include the debug package")
+# Wi-Fi comes from flashing, so no build opens a hotspot: ESPHome's captive
+# portal behind it also accepts firmware uploads. Without credentials, the
+# public build must not take password-less esphome OTA either.
+core = (ROOT / "packages" / "core.yaml").read_text()
+public = strip_comments(factory + core)
+both = public + strip_comments((ROOT / "m5dial.yaml").read_text())
+if "captive_portal" in both or re.search(r"^\s*ap:", both, re.M):
+    fails.append("no build may open a hotspot / captive portal")
+if "platform: esphome" in public:
+    fails.append("public build must not use password-less esphome OTA")
 
 # —— Persistence ———————————————————————————————————————————————————
 # Settings must survive an immediate power cut, so they persist through
@@ -100,11 +122,11 @@ if "include/agent.h" not in main:
 if "restore_value" in strip_comments(ac):
     fails.append("ac.yaml should persist via settings_store.h, not restore_value")
 if "restore_value: true" in strip_comments(ui):
-    fails.append("ui.yaml globals should persist via settings_store.h")
+    fails.append("ui globals should persist via settings_store.h")
 if "id: ac_persist" not in ac or "m5dial::commit()" not in ac:
     fails.append("ac.yaml missing the ac_persist script")
 store = (ROOT / "include" / "settings_store.h").read_text()
-for key in ("KEY_ROTATION", "KEY_NIGHT", "KEY_AP", "KEY_SOUND",
+for key in ("KEY_ROTATION", "KEY_NIGHT", "KEY_SOUND",
             "KEY_AC_POWER", "KEY_AC_TEMP", "KEY_AC_FAN"):
     if key not in store:
         fails.append(f"settings_store.h missing {key}")
@@ -138,14 +160,18 @@ for s in ("cities_refresh", "pomo_refresh", "sw_refresh", "timer_refresh",
           "weather_refresh", "time_hub_focus"):
     if f"id: {s}" not in tm:
         fails.append(f"time.yaml missing {s} script")
-if "timezone: !secret timezone" not in hw or "platform: sntp" not in hw:
-    fails.append("hardware.yaml missing SNTP / the timezone secret")
-if "api.open-meteo.com" not in wx or "!secret latitude" not in wx:
-    fails.append("weather.yaml missing Open-Meteo request / secret coordinates")
-for key in ("timezone:", "latitude:", "longitude:", "weather_place:"):
+if "platform: sntp" not in hw:
+    fails.append("hardware.yaml missing SNTP")
+# A timezone: on any time source pins it; without one, Home Assistant sends its
+# zone on connect and the Dial follows it.
+if "timezone:" in strip_comments(hw):
+    fails.append("hardware.yaml should not pin a timezone (HA provides it)")
+if "api.open-meteo.com" not in wx or "zone.home" not in wx:
+    fails.append("weather.yaml should fetch Open-Meteo for HA's zone.home")
+for key in ("wifi_ssid:", "wifi_password:", "api_encryption_key:", "ota_password:"):
     if key not in ex:
         fails.append(f"secrets.yaml.example missing {key}")
-for key in ("scene_1_entity", "light_4_entity", "city_1_name", "home_utc_offset"):
+for key in ("scene_1_entity", "light_4_entity", "city_1_name", "city_1_tz"):
     if key not in ent:
         fails.append(f"entities.yaml missing {key}")
 

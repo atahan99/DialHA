@@ -21,7 +21,7 @@ namespace m5dial {
 // Stable NVS keys. Do not renumber — these name the stored blobs.
 constexpr uint32_t KEY_ROTATION = 0x4D354431;  // "M5D1"
 constexpr uint32_t KEY_NIGHT = 0x4D354432;     // "M5D2"
-constexpr uint32_t KEY_AP = 0x4D354433;        // "M5D3"
+// 0x4D354433 ("M5D3") held the removed fallback-AP toggle; leave it unused
 constexpr uint32_t KEY_SOUND = 0x4D354434;     // "M5D4"
 constexpr uint32_t KEY_AC_POWER = 0x4D354435;  // "M5D5"
 constexpr uint32_t KEY_AC_TEMP = 0x4D354436;   // "M5D6"

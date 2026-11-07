@@ -1,0 +1,274 @@
+# Lights page: 2x2 HA light cards. Tap selects, tapping the selected card
+# toggles, the dial sets brightness.
+
+script:
+  - id: open_lights
+    then:
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+      - lvgl.page.show: page_lights
+      - script.execute:
+          id: light_select
+          i: !lambda "return id(light_index);"
+  # Lights page. The first tap on a card only selects it; tapping the selected
+  # card toggles it. So the dial can be aimed at a light without switching it,
+  # and a mis-aimed tap costs nothing. The dial then changes that light's
+  # brightness — tracked locally in light_bri, because Home Assistant's
+  # reported value lags a command by a refresh and the dial would feel like it
+  # was fighting back.
+  - id: light_card_tap
+    parameters:
+      i: int
+    then:
+      - if:
+          condition:
+            lambda: "return id(light_index) == i;"
+          then:
+            - script.execute: light_toggle
+          else:
+            - script.execute:
+                id: light_select
+                i: !lambda "return i;"
+
+  - id: light_select
+    parameters:
+      i: int
+    then:
+      - lambda: |-
+          id(light_index) = (i < 0 || i > 3) ? 0 : i;
+          const float bri[] = {id(ha_light_1_bri).state, id(ha_light_2_bri).state,
+                               id(ha_light_3_bri).state, id(ha_light_4_bri).state};
+          float b = bri[id(light_index)];
+          id(light_bri) = isnan(b) ? 128 : (int) b;
+      - script.execute: lights_refresh
+
+  - id: light_bri_step
+    parameters:
+      delta: int
+    then:
+      - lambda: |-
+          int v = id(light_bri) + (delta > 0 ? 16 : -16);
+          // Floor at 5/255 rather than 0: brightness 0 is "off" to HA, and the
+          // dial should dim a light, not switch it off behind your back.
+          id(light_bri) = v < 5 ? 5 : (v > 255 ? 255 : v);
+          lv_slider_set_value(id(sld_light_bri), id(light_bri), LV_ANIM_OFF);
+      - script.execute: light_bri_commit
+
+  # Debounced like ac_commit: the dial can spin freely, one call goes to HA
+  # when it settles.
+  - id: light_bri_commit
+    mode: restart
+    then:
+      - delay: 250ms
+      - script.execute:
+          id: light_apply_bri
+          bri: !lambda "return (float) id(light_bri);"
+
+  - id: light_apply_bri
+    parameters:
+      bri: float
+    then:
+      - homeassistant.action:
+          action: light.turn_on
+          data:
+            entity_id: !lambda |-
+              static const char* ents[] = {
+                "${light_1_entity}", "${light_2_entity}",
+                "${light_3_entity}", "${light_4_entity}"
+              };
+              int i = id(light_index) % 4;
+              return std::string(ents[i]);
+            brightness: !lambda "return (int)bri;"
+
+  - id: light_toggle
+    then:
+      - homeassistant.action:
+          action: light.toggle
+          data:
+            entity_id: !lambda |-
+              static const char* ents[] = {
+                "${light_1_entity}", "${light_2_entity}",
+                "${light_3_entity}", "${light_4_entity}"
+              };
+              return std::string(ents[id(light_index) % 4]);
+
+  - id: lights_refresh
+    then:
+      - lambda: |-
+          lv_obj_t *cards[] = {id(card_light_0), id(card_light_1),
+                               id(card_light_2), id(card_light_3)};
+          lv_obj_t *names[] = {id(lbl_light_0_name), id(lbl_light_1_name),
+                               id(lbl_light_2_name), id(lbl_light_3_name)};
+          lv_obj_t *vals[] = {id(lbl_light_0_bri), id(lbl_light_1_bri),
+                              id(lbl_light_2_bri), id(lbl_light_3_bri)};
+          const float bri[] = {id(ha_light_1_bri).state, id(ha_light_2_bri).state,
+                               id(ha_light_3_bri).state, id(ha_light_4_bri).state};
+          text_sensor::TextSensor *st[] = {id(ha_light_1_state), id(ha_light_2_state),
+                                           id(ha_light_3_state), id(ha_light_4_state)};
+          for (int i = 0; i < 4; i++) {
+            bool on = st[i]->state == "on";
+            lv_obj_set_style_border_color(
+                cards[i], lv_color_hex(i == id(light_index) ? 0xFFD400 : 0x333B3E), 0);
+            lv_obj_set_style_text_color(
+                names[i], lv_color_hex(on ? 0xF4F7F8 : 0x5A6467), 0);
+            char buf[12];
+            if (!on)
+              snprintf(buf, sizeof(buf), "OFF");
+            else if (isnan(bri[i]))
+              snprintf(buf, sizeof(buf), "ON");
+            else
+              snprintf(buf, sizeof(buf), "%.0f%%", bri[i] * 100.0f / 255.0f);
+            lv_label_set_text(vals[i], buf);
+            lv_obj_set_style_text_color(
+                vals[i], lv_color_hex(on ? 0xFFD400 : 0x5A6467), 0);
+          }
+          // Not while a finger is on it, or the 1 Hz refresh below snaps the
+          // knob back out from under the drag.
+          if (!lv_obj_has_state(id(sld_light_bri), LV_STATE_PRESSED))
+            lv_slider_set_value(id(sld_light_bri), id(light_bri), LV_ANIM_OFF);
+
+lvgl:
+  pages:
+    # —— Lights 2x2 cards ——
+    - id: page_lights
+      styles: st_bg
+      widgets:
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -92
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "LIGHTS"
+        - button:
+            id: card_light_0
+            styles: st_row
+            width: 88
+            height: 50
+            align: CENTER
+            x: -47
+            y: -39
+            border_color: 0xFFD400
+            widgets:
+              - label:
+                  id: lbl_light_0_name
+                  text: ${light_1_name}
+                  align: TOP_MID
+                  text_font: font_label
+              - label:
+                  id: lbl_light_0_bri
+                  text: "OFF"
+                  align: BOTTOM_MID
+                  text_font: font_label
+                  text_color: 0x5A6467
+            on_click:
+              - script.execute:
+                  id: light_card_tap
+                  i: 0
+        - button:
+            id: card_light_1
+            styles: st_row
+            width: 88
+            height: 50
+            align: CENTER
+            x: 47
+            y: -39
+            widgets:
+              - label:
+                  id: lbl_light_1_name
+                  text: ${light_2_name}
+                  align: TOP_MID
+                  text_font: font_label
+              - label:
+                  id: lbl_light_1_bri
+                  text: "OFF"
+                  align: BOTTOM_MID
+                  text_font: font_label
+                  text_color: 0x5A6467
+            on_click:
+              - script.execute:
+                  id: light_card_tap
+                  i: 1
+        - button:
+            id: card_light_2
+            styles: st_row
+            width: 88
+            height: 50
+            align: CENTER
+            x: -47
+            y: 17
+            widgets:
+              - label:
+                  id: lbl_light_2_name
+                  text: ${light_3_name}
+                  align: TOP_MID
+                  text_font: font_label
+              - label:
+                  id: lbl_light_2_bri
+                  text: "OFF"
+                  align: BOTTOM_MID
+                  text_font: font_label
+                  text_color: 0x5A6467
+            on_click:
+              - script.execute:
+                  id: light_card_tap
+                  i: 2
+        - button:
+            id: card_light_3
+            styles: st_row
+            width: 88
+            height: 50
+            align: CENTER
+            x: 47
+            y: 17
+            widgets:
+              - label:
+                  id: lbl_light_3_name
+                  text: ${light_4_name}
+                  align: TOP_MID
+                  text_font: font_label
+              - label:
+                  id: lbl_light_3_bri
+                  text: "OFF"
+                  align: BOTTOM_MID
+                  text_font: font_label
+                  text_color: 0x5A6467
+            on_click:
+              - script.execute:
+                  id: light_card_tap
+                  i: 3
+        - slider:
+            id: sld_light_bri
+            styles: st_accent
+            align: CENTER
+            y: 62
+            width: 140
+            height: 10
+            pad_all: 2
+            knob:
+              pad_all: 3
+            min_value: 10
+            max_value: 255
+            value: 128
+            on_release:
+              then:
+                - lambda: "id(light_bri) = (int) x;"
+                - script.execute:
+                    id: light_apply_bri
+                    bri: !lambda "return x;"
+        - button:
+            id: btn_back_lights
+            styles: st_chip
+            width: 42
+            height: 24
+            align: CENTER
+            y: 94
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back

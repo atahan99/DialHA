@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: UI invariants
+        run: python check_ui.py
+      - name: City time zones match tzdata
+        run: tests/run_city_tz_test.sh
+      - name: Public build config
+        run: esphome config dialha.factory.yaml
+      - name: Personal build config (placeholder secrets)
+        run: |
+          sed "s|REPLACE_WITH_BASE64_32_BYTE_KEY|$(openssl rand -base64 32)|" secrets.yaml.example > secrets.yaml
+          esphome config m5dial.yaml
+      # config alone misses C++ errors in lambdas; the release builds this file
+      - name: Compile public build
+        run: esphome compile dialha.factory.yaml

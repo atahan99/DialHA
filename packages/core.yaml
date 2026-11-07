@@ -1,0 +1,60 @@
+# Everything both builds share. The entry files only add credentials:
+#   m5dial.yaml          personal build: secrets.yaml + the debug package
+#   dialha.factory.yaml  public build: no secrets, Wi-Fi set up after flashing
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2025.11.0
+  includes:
+    - include/wx_icons.h
+    - include/city_tz.h
+    - include/settings_store.h
+    - include/timefmt.h
+  platformio_options:
+    board_build.flash_mode: dio
+  on_boot:
+    priority: 600
+    then:
+      - pcf8563.read_time:
+
+esp32:
+  variant: esp32s3
+  framework:
+    type: esp-idf
+
+# restore_value globals are batched and flushed on this timer. The 60s default
+# means a setting changed just before unplugging is silently lost; settings that
+# matter persist through include/settings_store.h instead.
+preferences:
+  flash_write_interval: 10s
+
+logger:
+  level: INFO
+
+api:
+  reboot_timeout: 0s
+
+wifi:
+  id: wifi_sta
+  # Dial stays plugged in; NONE avoids a stuck "scanning" state on the S3
+  power_save_mode: NONE
+  on_connect:
+    - logger.log: "WiFi connected"
+  on_disconnect:
+    - logger.log: "WiFi disconnected"
+
+packages:
+  hardware: !include hardware.yaml
+  entities: !include entities.yaml
+  ac: !include ac.yaml
+  time: !include time.yaml
+  weather: !include weather.yaml
+  # base first: its page_clock is the page LVGL starts on
+  ui_base: !include ui/base.yaml
+  ui_ac: !include ui/ac.yaml
+  ui_lights: !include ui/lights.yaml
+  ui_plugs: !include ui/plugs.yaml
+  ui_scenes: !include ui/scenes.yaml
+  ui_settings: !include ui/settings.yaml
+  ui_time: !include ui/time.yaml
