@@ -270,7 +270,7 @@ unlabelled round and correspond to other modes if anyone wants them later.
 
 ## 5.4 Diagnostics that earned their keep
 
-Three tools, all still in the firmware, that turned a week of guessing into
+Four tools, all still in the firmware, that turned a week of guessing into
 single measurements:
 
 | Tool | What it answers |

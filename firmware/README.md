@@ -9,7 +9,6 @@ It is gitignored and must stay that way (see the warning below).
 ## Build it
 
 ```bash
-# from m5dial/
 esphome compile m5dial.yaml
 cp .esphome/build/m5-dial/build/firmware.factory.bin firmware/dialha.bin
 ```

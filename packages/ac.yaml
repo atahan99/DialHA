@@ -333,7 +333,7 @@ api:
         n: int
       then:
         - lambda: |-
-            id(ac_repeats) = (n < 1) ? 1 : n;
+            id(ac_repeats) = n < 1 ? 1 : (n > 10 ? 10 : n);  // each repeat blocks ~90 ms
             ESP_LOGI("ac", "tx repeats = %d", id(ac_repeats));
     - action: ac_set_state
       variables:

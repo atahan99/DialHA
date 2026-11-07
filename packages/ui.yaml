@@ -1092,7 +1092,7 @@ api:
         # in the middle of a scripted sequence.
         - lambda: "lv_display_trigger_activity(nullptr);"
         - repeat:
-            count: !lambda "return n < 1 ? 1 : n;"
+            count: !lambda "return n < 1 ? 1 : (n > 50 ? 50 : n);"
             then:
               - if:
                   condition:

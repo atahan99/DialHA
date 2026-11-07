@@ -7,9 +7,7 @@ cd "$ROOT"
 
 ESPHOME="${ESPHOME:-}"
 if [[ -z "$ESPHOME" ]]; then
-  if [[ -x /tmp/m5dial-venv/bin/esphome ]]; then
-    ESPHOME=/tmp/m5dial-venv/bin/esphome
-  elif [[ -x "$ROOT/.venv/bin/esphome" ]]; then
+  if [[ -x "$ROOT/.venv/bin/esphome" ]]; then
     ESPHOME="$ROOT/.venv/bin/esphome"
   elif command -v esphome >/dev/null 2>&1; then
     ESPHOME="$(command -v esphome)"
