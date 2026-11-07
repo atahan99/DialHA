@@ -75,7 +75,7 @@ if "front_page) = lv_screen_active()" not in front:
     fails.append("front_action must snapshot the active page first")
 
 # The encoder must be able to reach every settings row.
-n_rows = len(re.findall(r"id: row_set_\w+", strip_comments(ui))) // 2
+n_rows = len(re.findall(r"id: row_set_\w+", strip_comments(ui)))
 if n_rows and f"% {n_rows};" not in ui:
     fails.append(f"settings has {n_rows} rows but the encoder does not wrap at {n_rows}")
 
@@ -105,13 +105,14 @@ for path in [ROOT / "dialha.factory.yaml", *sorted((ROOT / "packages").rglob("*.
         fails.append(f"{path.relative_to(ROOT)} uses !secret; the public build would need secrets.yaml")
 if "debug.yaml" in factory:
     fails.append("dialha.factory.yaml must not include the debug package")
-# Without credentials, the public build must not accept firmware from the
-# network: no password-less esphome OTA, and no captive portal (it serves an
-# upload form on an open hotspot).
+# Wi-Fi comes from flashing, so no build opens a hotspot: ESPHome's captive
+# portal behind it also accepts firmware uploads. Without credentials, the
+# public build must not take password-less esphome OTA either.
 core = (ROOT / "packages" / "core.yaml").read_text()
 public = strip_comments(factory + core)
-if "captive_portal" in public or re.search(r"^\s*ap:", public, re.M):
-    fails.append("public build must not open a hotspot / captive portal")
+both = public + strip_comments((ROOT / "m5dial.yaml").read_text())
+if "captive_portal" in both or re.search(r"^\s*ap:", both, re.M):
+    fails.append("no build may open a hotspot / captive portal")
 if "platform: esphome" in public:
     fails.append("public build must not use password-less esphome OTA")
 
@@ -125,7 +126,7 @@ if "restore_value: true" in strip_comments(ui):
 if "id: ac_persist" not in ac or "m5dial::commit()" not in ac:
     fails.append("ac.yaml missing the ac_persist script")
 store = (ROOT / "include" / "settings_store.h").read_text()
-for key in ("KEY_ROTATION", "KEY_NIGHT", "KEY_AP", "KEY_SOUND",
+for key in ("KEY_ROTATION", "KEY_NIGHT", "KEY_SOUND",
             "KEY_AC_POWER", "KEY_AC_TEMP", "KEY_AC_FAN"):
     if key not in store:
         fails.append(f"settings_store.h missing {key}")
@@ -167,7 +168,7 @@ if "timezone:" in strip_comments(hw):
     fails.append("hardware.yaml should not pin a timezone (HA provides it)")
 if "api.open-meteo.com" not in wx or "zone.home" not in wx:
     fails.append("weather.yaml should fetch Open-Meteo for HA's zone.home")
-for key in ("wifi_ssid:", "wifi_password:", "api_encryption_key:", "ota_password:", "ap_password:"):
+for key in ("wifi_ssid:", "wifi_password:", "api_encryption_key:", "ota_password:"):
     if key not in ex:
         fails.append(f"secrets.yaml.example missing {key}")
 for key in ("scene_1_entity", "light_4_entity", "city_1_name", "city_1_tz"):

@@ -54,7 +54,6 @@ font:
       - "\U000F05A9"  # wifi           network
       - "\U000F057E"  # volume-high    audio
       - "\U000F0594"  # weather-night  night
-      - "\U000F0003"  # access-point   AP fallback
       - "\U000F0210"  # fan
       - "\U000F0425"  # power
       - "\U000F050F"  # thermometer
@@ -114,9 +113,6 @@ globals:
     type: int
     initial_value: "0"
   - id: night_mode_enabled
-    type: bool
-    initial_value: "false"
-  - id: fallback_ap_enabled
     type: bool
     initial_value: "false"
   - id: ui_sound_enabled
@@ -427,7 +423,7 @@ script:
           condition:
             lvgl.page.is_showing: page_settings
           then:
-            - lambda: "id(settings_index) = (id(settings_index) + 1) % 8;"
+            - lambda: "id(settings_index) = (id(settings_index) + 1) % 7;"
             - script.execute: apply_settings_focus
       - if:
           condition:
@@ -489,7 +485,7 @@ script:
           condition:
             lvgl.page.is_showing: page_settings
           then:
-            - lambda: "id(settings_index) = (id(settings_index) + 7) % 8;"
+            - lambda: "id(settings_index) = (id(settings_index) + 6) % 7;"
             - script.execute: apply_settings_focus
       - if:
           condition:
@@ -920,14 +916,12 @@ lvgl:
     - lambda: |-
         id(display_rotation) = m5dial::load_or<m5dial::KEY_ROTATION>(180);
         id(night_mode_enabled) = m5dial::load_or<m5dial::KEY_NIGHT>(false);
-        id(fallback_ap_enabled) = m5dial::load_or<m5dial::KEY_AP>(false);
         id(ui_sound_enabled) = m5dial::load_or<m5dial::KEY_SOUND>(false);
         id(ac_power) = m5dial::load_or<m5dial::KEY_AC_POWER>(false);
         id(ac_temp) = m5dial::load_or<m5dial::KEY_AC_TEMP>(24);
         id(ac_fan) = m5dial::load_or<m5dial::KEY_AC_FAN>(0);
         id(clock_24h) = m5dial::load_or<m5dial::KEY_CLOCK24>(true);
         id(ring_numerals) = m5dial::load_or<m5dial::KEY_TICKNUM>(true);
-    - script.execute: apply_fallback_ap
     - script.execute: apply_display_rotation
     - script.execute: apply_ring_numerals
     - light.turn_on:

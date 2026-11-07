@@ -53,7 +53,6 @@ of this project, `strings` recovers all of the following:
 | `wifi_ssid` | plaintext |
 | `wifi_password` | **plaintext** |
 | `ota_password` | **plaintext** |
-| `ap_password` | **plaintext** |
 | `api_encryption_key` | the decoded 32 raw bytes |
 
 So:
@@ -61,7 +60,7 @@ So:
 - **Never commit it.** Git does not forget; removing it in a later commit leaves
   the blob in history, and scrubbing needs `filter-repo` plus a force-push.
 - **Never post or share it**, whether in an issue, a chat, or a cloud folder.
-- If a build has left your machine, rotate the OTA and AP passwords and
+- If a build has left your machine, rotate the OTA password and
   regenerate the API key.
 
 To share a build, use the public one instead: `dialha.factory.yaml` reads no

@@ -58,10 +58,9 @@ framebuffer to copy for screenshots.
 
 | | `dialha.factory.yaml` (public) | `m5dial.yaml` (personal) |
 |---|---|---|
-| Secrets in the `.bin` | none | Wi-Fi, OTA and AP passwords, API key |
+| Secrets in the `.bin` | none | Wi-Fi and OTA passwords, API key |
 | Wi-Fi | entered over USB right after flashing (Improv) | from `secrets.yaml` |
 | API encryption key | set by Home Assistant on adoption | from `secrets.yaml` |
-| Fallback hotspot | none | password-protected, off until Settings → AP |
 | Updates | flash the next release over USB | OTA from your machine, password-protected |
 | Debug API (`dial.py`, `ac_test.py`) | not included | [`packages/debug.yaml`](packages/debug.yaml) |
 
@@ -78,11 +77,12 @@ weather location come from Home Assistant (`zone.home`) in both.
 4. Allow actions (below).
 
 The public firmware holds no credentials, so it is careful about what it
-accepts from the network. Wi-Fi is only set over the USB cable: an open
-hotspot is not an option, because ESPHome's captive portal also takes firmware
-uploads. It has no network OTA either; a new version is flashed over USB the
-same way as the first. Until Home Assistant adopts it, any client on your LAN could set
-the API key first, so adopt it soon after it joins the network.
+accepts from the network. Wi-Fi is only set over the USB cable. Neither build
+opens a fallback hotspot, because ESPHome's captive portal behind it also takes
+firmware uploads; to change networks, flash again. The public build has no
+network OTA either: a new version is flashed over USB the same way as the
+first. Until Home Assistant adopts it, any client on your LAN could set the API
+key first, so adopt it soon after it joins the network.
 
 The Lights, Plugs and Scenes pages point at the author's entity IDs. To use
 your own, take control of the device in ESPHome Builder (the

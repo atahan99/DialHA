@@ -20,11 +20,3 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  ap:
-    ssid: "${friendly_name} Fallback"
-    password: !secret ap_password
-    # Off until Settings → AP arms it (90 s without Wi-Fi). Password-protected
-    # because the captive portal behind it also accepts firmware uploads.
-    ap_timeout: 0s
-
-captive_portal:

@@ -1,11 +1,6 @@
 # Settings page: scrollable list. Values persist via include/settings_store.h.
 
 script:
-  - id: apply_fallback_ap
-    then:
-      - lambda: |-
-          id(wifi_sta).set_ap_timeout(id(fallback_ap_enabled) ? 90000 : 0);
-
   - id: open_settings
     then:
       - light.turn_on:
@@ -82,10 +77,6 @@ script:
           id: lbl_set_night_val
           text: !lambda |-
             return std::string(id(night_mode_enabled) ? "ON" : "OFF");
-      - lvgl.label.update:
-          id: lbl_set_ap_val
-          text: !lambda |-
-            return std::string(id(fallback_ap_enabled) ? "ON" : "OFF");
       - script.execute: apply_settings_focus
 
   - id: apply_settings_focus
@@ -93,17 +84,17 @@ script:
       - lambda: |-
           lv_obj_t *rows[] = {id(row_set_display), id(row_set_rotate), id(row_set_clock),
                               id(row_set_ticks), id(row_set_network), id(row_set_audio),
-                              id(row_set_night), id(row_set_ap)};
+                              id(row_set_night)};
           int sel = id(settings_index);
-          for (int i = 0; i < 8; i++)
+          for (int i = 0; i < 7; i++)
             lv_obj_set_style_border_color(rows[i], lv_color_hex(i == sel ? 0xFFD400 : 0x333B3E), 0);
           // Keep the focused row visible in the scrolling container
-          if (sel >= 0 && sel < 8)
+          if (sel >= 0 && sel < 7)
             lv_obj_scroll_to_view(rows[sel], LV_ANIM_ON);
 
   - id: settings_activate
     then:
-      # 0 Display  1 Rotate  2 Clock  3 Dial nums  4 Network  5 Audio  6 Night  7 AP
+      # 0 Display  1 Rotate  2 Clock  3 Dial nums  4 Network  5 Audio  6 Night
       - if:
           condition:
             lambda: "return id(settings_index) == 0;"
@@ -147,14 +138,6 @@ script:
             - lambda: |-
                 id(night_mode_enabled) = !id(night_mode_enabled);
                 m5dial::store_now<m5dial::KEY_NIGHT>(id(night_mode_enabled));
-      - if:
-          condition:
-            lambda: "return id(settings_index) == 7;"
-          then:
-            - lambda: |-
-                id(fallback_ap_enabled) = !id(fallback_ap_enabled);
-                m5dial::store_now<m5dial::KEY_AP>(id(fallback_ap_enabled));
-            - script.execute: apply_fallback_ap
       # Row 4 (Network) is read-only
       - script.execute: settings_refresh
       - script.execute:
@@ -186,6 +169,8 @@ lvgl:
             bg_opa: TRANSP
             border_width: 0
             pad_all: 0
+            # Room under the last row so its focus border isn't clipped
+            pad_bottom: 4
             scroll_dir: VER
             scrollbar_mode: AUTO
             widgets:
@@ -412,38 +397,6 @@ lvgl:
                     - script.execute: apply_settings_focus
                   on_click:
                     - lambda: "id(settings_index) = 6;"
-                    - script.execute: settings_activate
-              - button:
-                  id: row_set_ap
-                  styles: st_row
-                  width: 156
-                  height: 26
-                  align: TOP_MID
-                  y: 210
-                  widgets:
-                    - label:
-                        text: "\U000F0003"
-                        align: LEFT_MID
-                        x: 6
-                        text_font: font_icon
-                        text_color: 0x63E7F2
-                    - label:
-                        text: "AP"
-                        align: LEFT_MID
-                        x: 28
-                        text_font: font_label
-                    - label:
-                        id: lbl_set_ap_val
-                        text: "OFF"
-                        align: RIGHT_MID
-                        x: -6
-                        text_font: font_label
-                        text_color: 0x9EA7AA
-                  on_press:
-                    - lambda: "id(settings_index) = 7;"
-                    - script.execute: apply_settings_focus
-                  on_click:
-                    - lambda: "id(settings_index) = 7;"
                     - script.execute: settings_activate
         - button:
             id: btn_back_settings

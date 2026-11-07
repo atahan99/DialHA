@@ -1,7 +1,7 @@
 # Public build: no secrets, so the .bin can be shared and is published by CI.
 #   1. Flash the release .bin with https://web.esphome.io and give it Wi-Fi
-#      there, over USB (Improv). Setting Wi-Fi needs the cable on purpose: there is no open
-#      hotspot, because a captive portal also accepts firmware uploads.
+#      there, over USB (Improv). There is no fallback hotspot: a captive
+#      portal also accepts firmware uploads.
 #   2. Home Assistant discovers it; adopting it sets the API encryption key.
 #      Until then any client on the LAN could set that key, so adopt promptly.
 #   3. Allow the device to perform Home Assistant actions (see README).
