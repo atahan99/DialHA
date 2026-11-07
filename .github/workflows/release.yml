@@ -1,0 +1,38 @@
+name: Release
+
+# Push a tag like v1.2.0: builds dialha.factory.yaml with that version and
+# attaches the factory binary to a GitHub release. Flash it with
+# https://web.esphome.io.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the release
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          esphome -s version "$VERSION" compile dialha.factory.yaml
+          mkdir -p dist
+          cp .esphome/build/dialha/build/firmware.factory.bin "dist/dialha-$VERSION.factory.bin"
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.bin --generate-notes
