@@ -49,30 +49,23 @@ substitutions:
   scene_4_entity: scene.my_room_dimmed
   scene_4_name: "Dimmed"
 
-  # World-clock cities (edit freely). Offsets are hours from UTC.
-  # home_utc_offset MUST match secrets.yaml timezone (Europe/Istanbul → 3).
-  home_utc_offset: "3"
-  home_dst: "0"
-  # *_utc_offset is STANDARD time; *_dst picks the rule that adds the summer
-  # hour: 0 = none, 1 = EU (last Sun Mar..last Sun Oct), 2 = US/CA (2nd Sun
-  # Mar..1st Sun Nov). Verified against tzdata for a full year.
+  # World-clock cities (edit freely). Each zone is the POSIX string tzdata
+  # ends its zone file with: `tail -1 /usr/share/zoneinfo/Asia/Tokyo`. Keep the
+  # IANA name in the comment; tests/run_city_tz_test.sh checks the pair against
+  # tzdata, so a country changing its clocks shows up as a failing test.
+  # The home clock needs nothing here: Home Assistant sends its time zone.
   city_1_name: "Istanbul"
-  city_1_utc_offset: "3"
-  city_1_dst: "0"          # Turkiye is permanently UTC+3 since 2016
+  city_1_tz: "<+03>-3"                    # Europe/Istanbul
   city_2_name: "London"
-  city_2_utc_offset: "0"
-  city_2_dst: "1"
+  city_2_tz: "GMT0BST,M3.5.0/1,M10.5.0"   # Europe/London
   city_3_name: "New York"
-  city_3_utc_offset: "-5"
-  city_3_dst: "2"
+  city_3_tz: "EST5EDT,M3.2.0,M11.1.0"     # America/New_York
   city_4_name: "Vancouver"
-  city_4_utc_offset: "-7"
-  city_4_dst: "0"          # BC stopped changing clocks; -7 year-round
+  city_4_tz: "MST7"                       # America/Vancouver
   city_5_name: "Chicago"
-  city_5_utc_offset: "-6"
-  city_5_dst: "2"
-  # Weather is not an HA entity — see packages/weather.yaml (Open-Meteo,
-  # coordinates in secrets.yaml).
+  city_5_tz: "CST6CDT,M3.2.0,M11.1.0"     # America/Chicago
+  # Weather is not an HA entity: packages/weather.yaml asks Open-Meteo for
+  # the location of HA's zone.home.
 
 sensor:
   - platform: homeassistant

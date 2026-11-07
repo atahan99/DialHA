@@ -1077,55 +1077,6 @@ script:
           text_color: !lambda |-
             return id(ac_power) ? lv_color_hex(0x63E7F2) : lv_color_hex(0x5A6467);
 
-# Agent bridge — lets a host script drive the Dial and see what it drew, so UI
-# changes can be checked without photographing the screen. See scripts/dial.py.
-# The four keys are the Dial's entire physical input surface, so anything a
-# finger can reach is reachable from here too.
-api:
-  actions:
-    - action: ui_key
-      variables:
-        key: string
-        n: int
-      then:
-        # Count as input, or LVGL's idle timers walk the UI back to the clock
-        # in the middle of a scripted sequence.
-        - lambda: "lv_display_trigger_activity(nullptr);"
-        - repeat:
-            count: !lambda "return n < 1 ? 1 : (n > 50 ? 50 : n);"
-            then:
-              - if:
-                  condition:
-                    lambda: 'return key == "cw";'
-                  then:
-                    - script.execute: maybe_wake
-                    - script.execute: encoder_nav_cw
-              - if:
-                  condition:
-                    lambda: 'return key == "ccw";'
-                  then:
-                    - script.execute: maybe_wake
-                    - script.execute: encoder_nav_ccw
-              - if:
-                  condition:
-                    lambda: 'return key == "press";'
-                  then:
-                    - script.execute: front_or_wake
-              - if:
-                  condition:
-                    lambda: 'return key == "back";'
-                  then:
-                    - script.execute: nav_back
-              # Let LVGL redraw between steps, so a burst of keys ends in the
-              # same state a human's would.
-              - delay: 50ms
-    - action: ui_screenshot
-      variables:
-        host: string
-        port: int
-      then:
-        - lambda: "m5dial::screenshot(host, port);"
-
 lvgl:
   displays:
     - round_display
@@ -1140,8 +1091,6 @@ lvgl:
             condition:
               lambda: |-
                 auto t = id(sntp_time).now();
-                if (!t.is_valid()) t = id(ha_time).now();
-                if (!t.is_valid()) t = id(rtctime).now();
                 bool night = id(night_mode_enabled) && t.is_valid() && (t.hour >= 22 || t.hour < 8);
                 return !(night || id(screen_forced_off) || id(display_asleep));
             then:
@@ -1152,8 +1101,6 @@ lvgl:
             condition:
               lambda: |-
                 auto t = id(sntp_time).now();
-                if (!t.is_valid()) t = id(ha_time).now();
-                if (!t.is_valid()) t = id(rtctime).now();
                 bool night = id(night_mode_enabled) && t.is_valid() && (t.hour >= 22 || t.hour < 8);
                 return night || id(screen_forced_off);
             then:
@@ -3054,7 +3001,7 @@ lvgl:
     - lambda: |-
         id(display_rotation) = m5dial::load_or<m5dial::KEY_ROTATION>(180);
         id(night_mode_enabled) = m5dial::load_or<m5dial::KEY_NIGHT>(false);
-        id(fallback_ap_enabled) = m5dial::load_or<m5dial::KEY_AP>(false);
+        id(fallback_ap_enabled) = m5dial::load_or<m5dial::KEY_AP>(${ap_default});
         id(ui_sound_enabled) = m5dial::load_or<m5dial::KEY_SOUND>(false);
         id(ac_power) = m5dial::load_or<m5dial::KEY_AC_POWER>(false);
         id(ac_temp) = m5dial::load_or<m5dial::KEY_AC_TEMP>(24);

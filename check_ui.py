@@ -20,6 +20,7 @@ wx = (ROOT / "packages" / "weather.yaml").read_text()
 ent = (ROOT / "packages" / "entities.yaml").read_text()
 ex = (ROOT / "secrets.yaml.example").read_text()
 main = (ROOT / "m5dial.yaml").read_text()
+debug = (ROOT / "packages" / "debug.yaml").read_text()
 
 fails: list[str] = []
 
@@ -88,11 +89,20 @@ if re.search(r"page_lights\n\s+then:\n\s+- lambda: \"id\(light_index\)", ui):
     fails.append("the encoder should no longer move the Lights selection")
 
 # —— Agent bridge ——————————————————————————————————————————————————
-for action in ("ui_key", "ui_screenshot"):
-    if f"action: {action}" not in ui:
-        fails.append(f"api action {action} missing — scripts/dial.py needs it")
-if "include/agent.h" not in main:
-    fails.append("m5dial.yaml does not include include/agent.h")
+for action in ("ui_key", "ui_screenshot", "ac_send_code", "ac_set_state"):
+    if f"action: {action}" not in debug:
+        fails.append(f"api action {action} missing from debug.yaml; scripts/ need it")
+if "include/agent.h" not in debug or "debug.yaml" not in main:
+    fails.append("the personal build must include packages/debug.yaml (agent.h)")
+
+# —— Public build ——————————————————————————————————————————————————
+# dialha.factory.yaml is published, so nothing it pulls in may read secrets.yaml.
+factory = (ROOT / "dialha.factory.yaml").read_text()
+for path in [ROOT / "dialha.factory.yaml", *sorted((ROOT / "packages").glob("*.yaml"))]:
+    if path.name != "debug.yaml" and "!secret" in strip_comments(path.read_text()):
+        fails.append(f"{path.relative_to(ROOT)} uses !secret; the public build would need secrets.yaml")
+if "debug.yaml" in factory:
+    fails.append("dialha.factory.yaml must not include the debug package")
 
 # —— Persistence ———————————————————————————————————————————————————
 # Settings must survive an immediate power cut, so they persist through
@@ -138,14 +148,18 @@ for s in ("cities_refresh", "pomo_refresh", "sw_refresh", "timer_refresh",
           "weather_refresh", "time_hub_focus"):
     if f"id: {s}" not in tm:
         fails.append(f"time.yaml missing {s} script")
-if "timezone: !secret timezone" not in hw or "platform: sntp" not in hw:
-    fails.append("hardware.yaml missing SNTP / the timezone secret")
-if "api.open-meteo.com" not in wx or "!secret latitude" not in wx:
-    fails.append("weather.yaml missing Open-Meteo request / secret coordinates")
-for key in ("timezone:", "latitude:", "longitude:", "weather_place:"):
+if "platform: sntp" not in hw:
+    fails.append("hardware.yaml missing SNTP")
+# A timezone: on any time source pins it; without one, Home Assistant sends its
+# zone on connect and the Dial follows it.
+if "timezone:" in strip_comments(hw):
+    fails.append("hardware.yaml should not pin a timezone (HA provides it)")
+if "api.open-meteo.com" not in wx or "zone.home" not in wx:
+    fails.append("weather.yaml should fetch Open-Meteo for HA's zone.home")
+for key in ("wifi_ssid:", "wifi_password:", "api_encryption_key:", "ota_password:", "ap_password:"):
     if key not in ex:
         fails.append(f"secrets.yaml.example missing {key}")
-for key in ("scene_1_entity", "light_4_entity", "city_1_name", "home_utc_offset"):
+for key in ("scene_1_entity", "light_4_entity", "city_1_name", "city_1_tz"):
     if key not in ent:
         fails.append(f"entities.yaml missing {key}")
 

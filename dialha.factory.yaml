@@ -1,0 +1,40 @@
+# Public build: no secrets, so the .bin can be shared and is published by CI.
+#   1. Flash the release .bin with https://web.esphome.io (or esptool) and give
+#      it Wi-Fi there over USB (Improv), or join the "DialHA ..." hotspot it opens.
+#   2. Home Assistant discovers it; adopting it sets the API encryption key.
+#   3. Allow the device to perform Home Assistant actions (see README).
+# Time zone and weather location come from Home Assistant (zone.home).
+# The HA entities on the Lights / Plugs / Scenes pages are the author's; take
+# control of the device in ESPHome Builder and edit packages/entities.yaml.
+substitutions:
+  name: dialha
+  friendly_name: DialHA
+  # No Wi-Fi yet on a fresh device, so the hotspot must be allowed to open
+  ap_default: "true"
+  # The release workflow overrides this with the tag: esphome -s version 1.2.0
+  version: "dev"
+
+packages:
+  core: !include packages/core.yaml
+
+esphome:
+  # Two public Dials on one network must not share a hostname
+  name_add_mac_suffix: true
+  project:
+    name: atahan99.dialha
+    version: "${version}"
+
+dashboard_import:
+  package_import_url: github://atahan99/DialHA/dialha.factory.yaml@main
+
+api:
+  # No key in the firmware: Home Assistant sets one when it adopts the device
+  encryption: {}
+
+ota:
+  - platform: esphome
+
+wifi:
+  ap: {}
+
+improv_serial:

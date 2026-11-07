@@ -107,11 +107,14 @@ text_sensor:
       id: wifi_ip
       name: IP Address
 
+# All three sources set the same system clock, so lambdas read id(sntp_time)
+# whichever one synced last. No timezone: here on purpose: Home Assistant sends
+# its own zone on connect (USE_HOMEASSISTANT_TIMEZONE). Until then ESPHome uses
+# the zone of the machine that compiled the firmware.
 time:
   # SNTP is the reliable source when HA API is not adopted yet
   - platform: sntp
     id: sntp_time
-    timezone: !secret timezone
     on_time_sync:
       then:
         - logger.log: "SNTP time synced"
@@ -121,11 +124,9 @@ time:
     id: rtctime
     i2c_id: internal_i2c
     address: 0x51
-    timezone: !secret timezone
     update_interval: never
   - platform: homeassistant
     id: ha_time
-    timezone: !secret timezone
     on_time_sync:
       then:
         - logger.log: "HA time synced"

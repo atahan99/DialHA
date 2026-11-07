@@ -1,0 +1,160 @@
+# Debug and bench-test surface, only in the personal build (m5dial.yaml).
+# Everything here is reachable over the encrypted ESPHome API: scripts/dial.py
+# (screenshots + scripted input) and scripts/ac_test.py (raw IR frames).
+# Left out of dialha.factory.yaml so a public device exposes none of it.
+
+esphome:
+  includes:
+    - include/agent.h
+
+globals:
+  - id: ir_beacon_count
+    type: int
+    initial_value: "0"
+
+# ui_key / ui_screenshot let a host drive the Dial and see what it drew. The
+# four keys are its entire physical input surface, so anything a finger can
+# reach is reachable from here. The ac_* actions send exact IR frames so they
+# can be compared without touching the Dial.
+api:
+  actions:
+    - action: ui_key
+      variables:
+        key: string
+        n: int
+      then:
+        # Count as input, or LVGL's idle timers walk the UI back to the clock
+        # in the middle of a scripted sequence.
+        - lambda: "lv_display_trigger_activity(nullptr);"
+        - repeat:
+            count: !lambda "return n < 1 ? 1 : (n > 50 ? 50 : n);"
+            then:
+              - if:
+                  condition:
+                    lambda: 'return key == "cw";'
+                  then:
+                    - script.execute: maybe_wake
+                    - script.execute: encoder_nav_cw
+              - if:
+                  condition:
+                    lambda: 'return key == "ccw";'
+                  then:
+                    - script.execute: maybe_wake
+                    - script.execute: encoder_nav_ccw
+              - if:
+                  condition:
+                    lambda: 'return key == "press";'
+                  then:
+                    - script.execute: front_or_wake
+              - if:
+                  condition:
+                    lambda: 'return key == "back";'
+                  then:
+                    - script.execute: nav_back
+              # Let LVGL redraw between steps, so a burst of keys ends in the
+              # same state a human's would.
+              - delay: 50ms
+    - action: ui_screenshot
+      variables:
+        host: string
+        port: int
+      then:
+        - lambda: "m5dial::screenshot(host, port);"
+    - action: ac_send_code
+      variables:
+        code: int
+      then:
+        - logger.log:
+            level: INFO
+            format: "API ac_send_code 0x%07X"
+            args: ["(unsigned) code"]
+        - script.execute:
+            id: ac_tx_code
+            code: !lambda "return code;"
+    - action: ac_loopback
+      variables:
+        enable: bool
+      then:
+        - lambda: |-
+            id(ir_loopback) = enable;
+            ESP_LOGI("ac", "IR loopback %s", enable ? "ON" : "OFF");
+    - action: ac_arm_capture
+      then:
+        - lambda: |-
+            id(ir_capture_arm) = true;
+            ESP_LOGI("ac", "armed - press the remote at the dome");
+    - action: ac_replay
+      then:
+        - if:
+            condition:
+              lambda: "return id(ir_capture).size() >= 56;"
+            then:
+              - logger.log:
+                  level: INFO
+                  format: "replaying captured frame verbatim"
+              - remote_transmitter.transmit_raw:
+                  transmitter_id: ir_tx
+                  carrier_frequency: ${ac_carrier_hz}Hz
+                  code: !lambda "return id(ir_capture);"
+            else:
+              - logger.log:
+                  level: WARN
+                  format: "nothing captured yet"
+    - action: ac_set_repeats
+      variables:
+        n: int
+      then:
+        - lambda: |-
+            id(ac_repeats) = n < 1 ? 1 : (n > 10 ? 10 : n);  // each repeat blocks ~90 ms
+            ESP_LOGI("ac", "tx repeats = %d", id(ac_repeats));
+    - action: ac_set_state
+      variables:
+        temp: int
+        fan: int
+        n3: int
+      then:
+        - lambda: |-
+            if (temp >= 18 && temp <= 30) id(ac_temp) = temp;
+            if (fan >= 0 && fan <= 5) id(ac_fan) = fan;
+            ESP_LOGI("ac", "API ac_set_state temp=%d fan=%d n3=%d",
+                     id(ac_temp), id(ac_fan), n3);
+        - script.execute:
+            id: ac_tx_state
+            n3: !lambda "return n3;"
+        - script.execute: ac_refresh
+
+# —— IR range diagnostics ——————————————————————————————————————
+# Beacon mode: re-sends the current state every 2s so you can carry the Dial
+# (or reposition the Unit IR) and hear exactly where the AC starts responding.
+# Safe to leave on: the frame is absolute state, so repeats change nothing.
+# Toggle from Home Assistant, then watch `esphome logs` for the send count.
+switch:
+  - platform: template
+    id: ir_beacon
+    name: "IR Beacon (range test)"
+    optimistic: true
+    icon: "mdi:signal-distance-variant"
+    turn_on_action:
+      - lambda: "id(ir_beacon_count) = 0;"
+      - logger.log:
+          level: INFO
+          format: "IR beacon ON - walk the emitter around, AC beeps when it hears"
+    turn_off_action:
+      - logger.log:
+          level: INFO
+          format: "IR beacon OFF"
+
+interval:
+  - interval: 2s
+    then:
+      - if:
+          condition:
+            switch.is_on: ir_beacon
+          then:
+            - lambda: |-
+                id(ir_beacon_count)++;
+                ESP_LOGI("ac", "beacon ping #%d  %dC fan=%d", id(ir_beacon_count),
+                         id(ac_temp), id(ac_fan));
+            - script.execute:
+                id: ac_tx_state
+                n3: 8
