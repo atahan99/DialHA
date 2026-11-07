@@ -1,10 +1,10 @@
 # Firmware artifacts
 
-`dialha.bin` is the **full factory image**: bootloader + partition table + app,
-written at offset `0x0`. It is not the OTA-only binary — use it for a first
+`dialha.bin` is the full factory image: bootloader + partition table + app,
+written at offset `0x0`. It is not the OTA-only binary. Use it for a first
 flash, a recovery flash, or a blank Dial.
 
-Gitignored, and it must stay that way — see the warning below.
+It is gitignored and must stay that way (see the warning below).
 
 ## Build it
 
@@ -28,9 +28,9 @@ Or in one step, which also uploads:
 esptool --chip esp32s3 --port /dev/cu.usbmodem2101 write_flash 0x0 firmware/dialha.bin
 ```
 
-If the port does not appear: hold **BOOT (G0)**, tap **RESET**, release **BOOT**.
+If the port does not appear: hold BOOT (G0), tap RESET, release BOOT.
 
-Once the Dial is on Wi‑Fi, prefer OTA — it avoids the USB serial path entirely:
+Once the Dial is on Wi‑Fi, prefer OTA, which avoids the USB serial path entirely:
 
 ```bash
 esphome run m5dial.yaml --device <device-ip>
@@ -43,10 +43,10 @@ and drop the S3 into ROM download mode (`waiting for download`). Recover with:
 esptool --chip esp32s3 --port /dev/cu.usbmodem2101 run
 ```
 
-## ⚠️ This file is a credential
+## This file is a credential
 
-ESPHome compiles `secrets.yaml` **into** the binary. Verified against a real
-build of this project — the following are recoverable with `strings`:
+ESPHome compiles `secrets.yaml` into the binary. Checked against a real build
+of this project, `strings` recovers all of the following:
 
 | Secret | Embedded |
 |---|---|
@@ -54,14 +54,14 @@ build of this project — the following are recoverable with `strings`:
 | `wifi_password` | **plaintext** |
 | `ota_password` | **plaintext** |
 | `ap_password` | **plaintext** |
-| `latitude` / `longitude` | plaintext — your home location |
+| `latitude` / `longitude` | plaintext (your home location) |
 | `api_encryption_key` | the decoded 32 raw bytes |
 
 So:
 
 - **Never commit it.** Git does not forget; removing it in a later commit leaves
   the blob in history, and scrubbing needs `filter-repo` plus a force-push.
-- **Never post or share it** — not in an issue, a chat, or a cloud folder.
+- **Never post or share it**, whether in an issue, a chat, or a cloud folder.
 - If a build has left your machine, rotate the OTA and AP passwords and
   regenerate the API key.
 
