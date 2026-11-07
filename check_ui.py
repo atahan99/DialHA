@@ -105,6 +105,15 @@ for path in [ROOT / "dialha.factory.yaml", *sorted((ROOT / "packages").rglob("*.
         fails.append(f"{path.relative_to(ROOT)} uses !secret; the public build would need secrets.yaml")
 if "debug.yaml" in factory:
     fails.append("dialha.factory.yaml must not include the debug package")
+# Without credentials, the public build must not accept firmware from the
+# network: no password-less esphome OTA, and no captive portal (it serves an
+# upload form on an open hotspot).
+core = (ROOT / "packages" / "core.yaml").read_text()
+public = strip_comments(factory + core)
+if "captive_portal" in public or re.search(r"^\s*ap:", public, re.M):
+    fails.append("public build must not open a hotspot / captive portal")
+if "platform: esphome" in public:
+    fails.append("public build must not use password-less esphome OTA")
 
 # —— Persistence ———————————————————————————————————————————————————
 # Settings must survive an immediate power cut, so they persist through

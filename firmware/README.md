@@ -1,6 +1,7 @@
 # Firmware artifacts
 
-`dialha.bin` is the full factory image: bootloader + partition table + app,
+`dialha.bin` is the personal build's full factory image (`m5dial.yaml`):
+bootloader + partition table + app,
 written at offset `0x0`. It is not the OTA-only binary. Use it for a first
 flash, a recovery flash, or a blank Dial.
 
@@ -53,7 +54,6 @@ of this project, `strings` recovers all of the following:
 | `wifi_password` | **plaintext** |
 | `ota_password` | **plaintext** |
 | `ap_password` | **plaintext** |
-| `latitude` / `longitude` | plaintext (your home location) |
 | `api_encryption_key` | the decoded 32 raw bytes |
 
 So:
@@ -64,6 +64,6 @@ So:
 - If a build has left your machine, rotate the OTA and AP passwords and
   regenerate the API key.
 
-To share a build, compile against a `secrets.yaml` full of placeholders. This
-config enables `captive_portal:` and an AP fallback, so a placeholder build
-boots into its own hotspot and lets the user enter their own Wi‑Fi.
+To share a build, use the public one instead: `dialha.factory.yaml` reads no
+secrets. A fresh public Dial is flashed with ESPHome Web and takes
+Wi‑Fi over USB there (Improv), and Home Assistant sets its API key when it adopts it. Tagged releases publish it; see the main README.

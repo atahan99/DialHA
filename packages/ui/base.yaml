@@ -920,7 +920,7 @@ lvgl:
     - lambda: |-
         id(display_rotation) = m5dial::load_or<m5dial::KEY_ROTATION>(180);
         id(night_mode_enabled) = m5dial::load_or<m5dial::KEY_NIGHT>(false);
-        id(fallback_ap_enabled) = m5dial::load_or<m5dial::KEY_AP>(${ap_default});
+        id(fallback_ap_enabled) = m5dial::load_or<m5dial::KEY_AP>(false);
         id(ui_sound_enabled) = m5dial::load_or<m5dial::KEY_SOUND>(false);
         id(ac_power) = m5dial::load_or<m5dial::KEY_AC_POWER>(false);
         id(ac_temp) = m5dial::load_or<m5dial::KEY_AC_TEMP>(24);

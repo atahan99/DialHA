@@ -4,8 +4,6 @@
 substitutions:
   name: m5-dial
   friendly_name: M5 Dial
-  # Fallback hotspot stays off until Settings → AP turns it on
-  ap_default: "false"
 
 packages:
   core: !include packages/core.yaml
@@ -25,4 +23,8 @@ wifi:
   ap:
     ssid: "${friendly_name} Fallback"
     password: !secret ap_password
+    # Off until Settings → AP arms it (90 s without Wi-Fi). Password-protected
+    # because the captive portal behind it also accepts firmware uploads.
     ap_timeout: 0s
+
+captive_portal:

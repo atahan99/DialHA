@@ -44,9 +44,6 @@ wifi:
   on_disconnect:
     - logger.log: "WiFi disconnected"
 
-# Settings → AP controls when the fallback hotspot may open (see ui.yaml).
-captive_portal:
-
 packages:
   hardware: !include hardware.yaml
   entities: !include entities.yaml
