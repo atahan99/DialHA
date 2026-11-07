@@ -1,0 +1,328 @@
+# Plugs page: HA switches, 4 rows per page, < / > flip pages.
+
+script:
+  - id: open_plugs
+    then:
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+      - lvgl.page.show: page_plugs
+      - script.execute: plugs_refresh
+  - id: plug_page_next
+    then:
+      - lambda: |-
+          int n = ${plug_count};
+          int pages = (n + 3) / 4;
+          if (pages < 1) pages = 1;
+          int page = id(plug_sel) / 4;
+          page = (page + 1) % pages;
+          id(plug_sel) = page * 4;
+          if (id(plug_sel) >= n) id(plug_sel) = n - 1;
+      - script.execute: plugs_refresh
+
+  - id: plug_page_prev
+    then:
+      - lambda: |-
+          int n = ${plug_count};
+          int pages = (n + 3) / 4;
+          if (pages < 1) pages = 1;
+          int page = id(plug_sel) / 4;
+          page = (page + pages - 1) % pages;
+          id(plug_sel) = page * 4;
+      - script.execute: plugs_refresh
+
+  - id: plug_toggle
+    then:
+      - if:
+          condition:
+            lambda: |-
+              static const char* ents[] = {
+                "${plug_1_entity}", "${plug_2_entity}", "${plug_3_entity}", "${plug_4_entity}",
+                "${plug_5_entity}", "${plug_6_entity}", "${plug_7_entity}", "${plug_8_entity}"
+              };
+              int i = id(plug_sel);
+              if (i < 0 || i >= ${plug_count} || i > 7) return false;
+              return strcmp(ents[i], "switch.none") != 0;
+          then:
+            - homeassistant.action:
+                action: switch.toggle
+                data:
+                  entity_id: !lambda |-
+                    static const char* ents[] = {
+                      "${plug_1_entity}", "${plug_2_entity}", "${plug_3_entity}", "${plug_4_entity}",
+                      "${plug_5_entity}", "${plug_6_entity}", "${plug_7_entity}", "${plug_8_entity}"
+                    };
+                    return std::string(ents[id(plug_sel)]);
+            - script.execute:
+                id: ui_beep
+                tune: "plug:d=32,o=5,b=180:c,e"
+            - delay: 200ms
+            - script.execute: plugs_refresh
+
+  - id: plugs_refresh
+    then:
+      - lambda: |-
+          static const char *names[] = {
+              "${plug_1_name}", "${plug_2_name}", "${plug_3_name}", "${plug_4_name}",
+              "${plug_5_name}", "${plug_6_name}", "${plug_7_name}", "${plug_8_name}"};
+          text_sensor::TextSensor *states[] = {
+              id(ha_plug_1_state), id(ha_plug_2_state), id(ha_plug_3_state),
+              id(ha_plug_4_state), id(ha_plug_5_state), id(ha_plug_6_state),
+              id(ha_plug_7_state), id(ha_plug_8_state)};
+          sensor::Sensor *power[] = {
+              id(ha_plug_1_power), id(ha_plug_2_power), id(ha_plug_3_power),
+              id(ha_plug_4_power), id(ha_plug_5_power), id(ha_plug_6_power),
+              id(ha_plug_7_power), id(ha_plug_8_power)};
+          lv_obj_t *rows[] = {id(row_plug_0), id(row_plug_1),
+                              id(row_plug_2), id(row_plug_3)};
+          lv_obj_t *lname[] = {id(lbl_plug_0_name), id(lbl_plug_1_name),
+                               id(lbl_plug_2_name), id(lbl_plug_3_name)};
+          lv_obj_t *lstate[] = {id(lbl_plug_0_st), id(lbl_plug_1_st),
+                                id(lbl_plug_2_st), id(lbl_plug_3_st)};
+          lv_obj_t *lwatt[] = {id(lbl_plug_0_w), id(lbl_plug_1_w),
+                               id(lbl_plug_2_w), id(lbl_plug_3_w)};
+          const int n = ${plug_count};
+          int pages = (n + 3) / 4;
+          if (pages < 1) pages = 1;
+          const int page = id(plug_sel) / 4;
+          char buf[16];
+          snprintf(buf, sizeof(buf), "%d/%d", page + 1, pages);
+          lv_label_set_text(id(lbl_plugs_page), buf);
+          for (int i = 0; i < 4; i++) {
+            lv_obj_set_style_border_color(
+                rows[i], lv_color_hex((id(plug_sel) % 4) == i ? 0xFFD400 : 0x333B3E), 0);
+            // The last page can be short; blank the leftover rows rather than
+            // showing a stale entry from the page before.
+            const int slot = page * 4 + i;
+            if (slot >= n) {
+              lv_label_set_text(lname[i], "");
+              lv_label_set_text(lstate[i], "");
+              lv_label_set_text(lwatt[i], "");
+              continue;
+            }
+            lv_label_set_text(lname[i], names[slot]);
+            const std::string s = states[slot]->state;
+            lv_label_set_text(lstate[i], (s == "on" || s == "ON") ? "ON" : "OFF");
+            const float w = power[slot]->state;
+            if (isnan(w)) {
+              lv_label_set_text(lwatt[i], "--W");
+            } else {
+              snprintf(buf, sizeof(buf), "%.0fW", w);
+              lv_label_set_text(lwatt[i], buf);
+            }
+          }
+
+lvgl:
+  pages:
+    # —— Plugs list (4 rows / page, < > flips page) ——
+    - id: page_plugs
+      styles: st_bg
+      widgets:
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -92
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "PLUGS"
+        - label:
+            id: lbl_plugs_page
+            styles: st_text
+            align: CENTER
+            y: -76
+            text_font: font_label
+            text_color: 0xFFD400
+            text: "1/2"
+        - button:
+            id: row_plug_0
+            styles: st_row
+            width: 178
+            height: 30
+            align: CENTER
+            y: -51
+            border_color: 0xFFD400
+            widgets:
+              - label:
+                  text: "\U000F06A5"
+                  align: LEFT_MID
+                  x: 8
+                  text_font: font_icon
+                  text_color: 0x63E7F2
+              - label:
+                  id: lbl_plug_0_name
+                  text: ${plug_1_name}
+                  align: LEFT_MID
+                  x: 30
+                  text_font: font_label
+              - label:
+                  id: lbl_plug_0_st
+                  text: "OFF"
+                  align: CENTER
+                  text_font: font_label
+                  text_color: 0xFFD400
+              - label:
+                  id: lbl_plug_0_w
+                  text: "--W"
+                  align: RIGHT_MID
+                  x: -10
+                  text_font: font_label
+                  text_color: 0x9EA7AA
+            on_click:
+              - lambda: "id(plug_sel) = (id(plug_sel) / 4) * 4 + 0;"
+              - script.execute: plug_toggle
+        - button:
+            id: row_plug_1
+            styles: st_row
+            width: 178
+            height: 30
+            align: CENTER
+            y: -19
+            widgets:
+              - label:
+                  text: "\U000F06A5"
+                  align: LEFT_MID
+                  x: 8
+                  text_font: font_icon
+                  text_color: 0x63E7F2
+              - label:
+                  id: lbl_plug_1_name
+                  text: ${plug_2_name}
+                  align: LEFT_MID
+                  x: 30
+                  text_font: font_label
+              - label:
+                  id: lbl_plug_1_st
+                  text: "OFF"
+                  align: CENTER
+                  text_font: font_label
+              - label:
+                  id: lbl_plug_1_w
+                  text: "--W"
+                  align: RIGHT_MID
+                  x: -10
+                  text_font: font_label
+                  text_color: 0x9EA7AA
+            on_click:
+              - lambda: |-
+                  int base = (id(plug_sel) / 4) * 4 + 1;
+                  if (base < ${plug_count}) id(plug_sel) = base;
+              - script.execute: plug_toggle
+        - button:
+            id: row_plug_2
+            styles: st_row
+            width: 178
+            height: 30
+            align: CENTER
+            y: 13
+            widgets:
+              - label:
+                  text: "\U000F06A5"
+                  align: LEFT_MID
+                  x: 8
+                  text_font: font_icon
+                  text_color: 0x63E7F2
+              - label:
+                  id: lbl_plug_2_name
+                  text: ${plug_3_name}
+                  align: LEFT_MID
+                  x: 30
+                  text_font: font_label
+              - label:
+                  id: lbl_plug_2_st
+                  text: "OFF"
+                  align: CENTER
+                  text_font: font_label
+              - label:
+                  id: lbl_plug_2_w
+                  text: "--W"
+                  align: RIGHT_MID
+                  x: -10
+                  text_font: font_label
+                  text_color: 0x9EA7AA
+            on_click:
+              - lambda: |-
+                  int base = (id(plug_sel) / 4) * 4 + 2;
+                  if (base < ${plug_count}) id(plug_sel) = base;
+              - script.execute: plug_toggle
+        - button:
+            id: row_plug_3
+            styles: st_row
+            width: 178
+            height: 30
+            align: CENTER
+            y: 45
+            widgets:
+              - label:
+                  text: "\U000F06A5"
+                  align: LEFT_MID
+                  x: 8
+                  text_font: font_icon
+                  text_color: 0x63E7F2
+              - label:
+                  id: lbl_plug_3_name
+                  text: ${plug_4_name}
+                  align: LEFT_MID
+                  x: 30
+                  text_font: font_label
+              - label:
+                  id: lbl_plug_3_st
+                  text: "OFF"
+                  align: CENTER
+                  text_font: font_label
+              - label:
+                  id: lbl_plug_3_w
+                  text: "--W"
+                  align: RIGHT_MID
+                  x: -10
+                  text_font: font_label
+                  text_color: 0x9EA7AA
+            on_click:
+              - lambda: |-
+                  int base = (id(plug_sel) / 4) * 4 + 3;
+                  if (base < ${plug_count}) id(plug_sel) = base;
+              - script.execute: plug_toggle
+        - button:
+            id: btn_plug_prev
+            styles: st_chip
+            width: 38
+            height: 26
+            align: CENTER
+            x: -46
+            y: 80
+            widgets:
+              - label:
+                  text: "<"
+                  align: CENTER
+                  text_font: font_label
+            on_click:
+              - script.execute: plug_page_prev
+        - button:
+            id: btn_back_plugs
+            styles: st_chip
+            width: 42
+            height: 26
+            align: CENTER
+            y: 80
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back
+        - button:
+            id: btn_plug_next
+            styles: st_chip
+            width: 38
+            height: 26
+            align: CENTER
+            x: 46
+            y: 80
+            widgets:
+              - label:
+                  text: ">"
+                  align: CENTER
+                  text_font: font_label
+            on_click:
+              - script.execute: plug_page_next

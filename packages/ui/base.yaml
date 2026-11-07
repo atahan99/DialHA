@@ -1,0 +1,936 @@
+# Shared UI: fonts, styles, globals, navigation scripts, the clock face and
+# the launcher. Each other page is its own file next to this one.
+substitutions:
+  # Double-tap window on the clock face. Measured from PRESS (touch-down), not
+  # release: on_click only fires on release and adds ~300ms of variable latency.
+  # Real finger double-taps on this screen measured 600-1100ms apart.
+  clock_double_tap_ms: "900"
+
+# Volos industrial UI — 240x240 round, safe circle ~r≤100
+# Tokens: bg 0x0B0F11, text 0xF4F7F8, secondary 0x9EA7AA, amber 0xFFD400,
+#         warm 0xFF8A00, cyan 0x63E7F2, border 0x333B3E
+
+# Roboto renders cleaner than Rubik at 12–15px on GC9A01; bpp 4 keeps AA light.
+font:
+  - file: "gfonts://Roboto"
+    id: font_ui
+    size: 15
+    bpp: 4
+    glyphs: " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~°"
+  - file: "gfonts://Roboto@500"
+    id: font_clock
+    size: 52
+    bpp: 4
+    glyphs: "0123456789:"
+  - file: "gfonts://Roboto@500"
+    id: font_big
+    size: 34
+    bpp: 4
+    glyphs: "0123456789:.-°% ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  - file: "gfonts://Roboto"
+    id: font_label
+    size: 12
+    bpp: 4
+    glyphs: " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~°"
+  # Material Design Icons. Codepoints verified against upstream meta.json —
+  # do not guess these, several differ from the obvious value
+  # (clock-outline is F0150, brightness-6 is F00DF).
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: font_icon
+    size: 18
+    bpp: 4
+    glyphs:
+      - "\U000F0493"  # cog            settings
+      - "\U000F0717"  # snowflake      AC
+      - "\U000F06A5"  # power-plug     plugs
+      - "\U000F0335"  # lightbulb      lights
+      - "\U000F0150"  # clock-outline  time
+      - "\U000F03D8"  # palette        scenes
+      - "\U000F02DC"  # home           launcher centre
+      - "\U000F0142"  # chevron-right  list affordance
+      - "\U000F004D"  # arrow-left     back
+      - "\U000F00DF"  # brightness-6   display
+      - "\U000F0467"  # rotate-right   rotate
+      - "\U000F05A9"  # wifi           network
+      - "\U000F057E"  # volume-high    audio
+      - "\U000F0594"  # weather-night  night
+      - "\U000F0003"  # access-point   AP fallback
+      - "\U000F0210"  # fan
+      - "\U000F0425"  # power
+      - "\U000F050F"  # thermometer
+      - "\U000F01E7"  # earth          cities
+      - "\U000F051F"  # timer-sand     pomodoro
+      - "\U000F051B"  # timer-outline  stopwatch
+      - "\U000F13AB"  # timer          timer
+      - "\U000F040A"  # play
+      - "\U000F03E4"  # pause
+      - "\U000F0709"  # restart
+      - "\U000F0141"  # chevron-left
+      - "\U000F0374"  # minus
+      - "\U000F0415"  # plus
+      - "\U000F0599"  # weather-sunny
+      - "\U000F0595"  # weather-partly-cloudy
+      - "\U000F0590"  # weather-cloudy
+      - "\U000F0591"  # weather-fog
+      - "\U000F0597"  # weather-rainy
+      - "\U000F0596"  # weather-pouring
+      - "\U000F0598"  # weather-snowy
+      - "\U000F0593"  # weather-lightning
+      - "\U000F067F"  # weather-snowy-rainy
+  # Larger weather glyph for the Weather page hero
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: font_icon_big
+    size: 40
+    bpp: 4
+    glyphs:
+      - "\U000F0599"  # weather-sunny
+      - "\U000F0595"  # weather-partly-cloudy
+      - "\U000F0590"  # weather-cloudy
+      - "\U000F0591"  # weather-fog
+      - "\U000F0597"  # weather-rainy
+      - "\U000F0596"  # weather-pouring
+      - "\U000F0598"  # weather-snowy
+      - "\U000F0593"  # weather-lightning
+      - "\U000F067F"  # weather-snowy-rainy
+
+globals:
+  - id: light_index
+    type: int
+    initial_value: "0"
+  # Brightness target for the selected light, 5..255. Seeded from HA on select.
+  - id: light_bri
+    type: int
+    initial_value: "128"
+  - id: plug_sel
+    type: int
+    initial_value: "0"
+  - id: scene_index
+    type: int
+    initial_value: "0"
+  - id: launcher_index
+    type: int
+    initial_value: "1"
+  - id: settings_index
+    type: int
+    initial_value: "0"
+  - id: night_mode_enabled
+    type: bool
+    initial_value: "false"
+  - id: fallback_ap_enabled
+    type: bool
+    initial_value: "false"
+  - id: ui_sound_enabled
+    type: bool
+    initial_value: "false"
+  - id: screen_forced_off
+    type: bool
+    initial_value: "false"
+  - id: display_asleep
+    type: bool
+    initial_value: "false"
+  - id: display_rotation
+    type: int
+    initial_value: "180"
+  # Double-tap detection for the clock face. LVGL's own DOUBLE_CLICKED needs
+  # both taps within scroll_limit (10px) and long_press_time (400ms), which is
+  # unrealistic for a finger; this uses time only, with a wider window.
+  - id: clock_tap_ms
+    type: uint32_t
+    initial_value: "0"
+  - id: clock_tap_dbl
+    type: bool
+    initial_value: "false"
+  # Clock face options (persisted via settings_store.h)
+  - id: clock_24h
+    type: bool
+    initial_value: "true"
+  - id: ring_numerals
+    type: bool
+    initial_value: "true"
+  # Page that was showing when the front button was pressed — see front_action.
+  - id: front_page
+    type: lv_obj_t *
+    initial_value: "nullptr"
+  # AC dial target: 0=temp 1=fan 2=swing
+  - id: ac_focus
+    type: int
+    initial_value: "0"
+
+# Home Assistant pushes light state whenever it changes, but nothing on the
+# Dial listens; polling the page that is actually on screen is the same trick
+# packages/time.yaml uses for the clock and cities.
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: page_lights
+          then:
+            - script.execute: lights_refresh
+
+script:
+  - id: ui_beep
+    parameters:
+      tune: string
+    then:
+      - lambda: |-
+          if (!id(ui_sound_enabled)) return;
+          id(buzzer).play(tune.c_str());
+
+  - id: screen_sleep
+    then:
+      - lambda: "id(display_asleep) = true;"
+      - light.turn_on:
+          id: display_backlight
+          brightness: 0%
+      - lvgl.page.show: page_clock
+
+  - id: go_home_clock
+    then:
+      - lambda: "id(display_asleep) = false;"
+      - light.turn_on:
+          id: display_backlight
+          brightness: 20%
+      - lvgl.page.show: page_clock
+
+  # 0 Settings 1 AC 2 Plugs 3 Lights 4 Time 5 Scenes — order matches the
+  # wedges clockwise from the top.
+  - id: apply_launcher_focus
+    then:
+      - lambda: |-
+          int sel = id(launcher_index);
+          if (sel < 0) sel = 0;
+          if (sel > 5) sel = 5;
+          id(launcher_index) = sel;
+          lv_obj_t *segs[] = {id(btn_seg_settings), id(btn_seg_ac), id(btn_seg_plugs),
+                              id(btn_seg_lights), id(btn_seg_time), id(btn_seg_scenes)};
+          lv_obj_t *labels[] = {id(lbl_seg_settings), id(lbl_seg_ac), id(lbl_seg_plugs),
+                                id(lbl_seg_lights), id(lbl_seg_time), id(lbl_seg_scenes)};
+          lv_obj_t *icons[] = {id(icon_seg_settings), id(icon_seg_ac), id(icon_seg_plugs),
+                               id(icon_seg_lights), id(icon_seg_time), id(icon_seg_scenes)};
+          // Resting icon tint per wedge; focus overrides all of them with amber.
+          const uint32_t tint[] = {0x9EA7AA, 0x63E7F2, 0x9EA7AA, 0xFFD400, 0x9EA7AA, 0xFF8A00};
+          for (int i = 0; i < 6; i++) {
+            bool on = i == sel;
+            lv_obj_set_style_border_color(segs[i], lv_color_hex(on ? 0xFFD400 : 0x333B3E), 0);
+            lv_obj_set_style_text_color(labels[i], lv_color_hex(on ? 0xFFD400 : 0xF4F7F8), 0);
+            lv_obj_set_style_text_color(icons[i], lv_color_hex(on ? 0xFFD400 : tint[i]), 0);
+          }
+
+  - id: launcher_open_selected
+    then:
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 0;"
+          then:
+            - script.execute: open_settings
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 1;"
+          then:
+            - script.execute: open_ac
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 2;"
+          then:
+            - script.execute: open_plugs
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 3;"
+          then:
+            - script.execute: open_lights
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 4;"
+          then:
+            - script.execute: open_time
+      - if:
+          condition:
+            lambda: "return id(launcher_index) == 5;"
+          then:
+            - script.execute: open_scenes
+
+  # Touch on the clock face wakes the backlight but stays put; a double tap is
+  # what opens the launcher. Idle (45s) drops back to the dim level.
+  - id: clock_tap
+    then:
+      - lambda: |-
+          uint32_t now = millis();
+          uint32_t dt = now - id(clock_tap_ms);
+          id(clock_tap_dbl) = (id(clock_tap_ms) != 0) && (dt < ${clock_double_tap_ms});
+          id(clock_tap_ms) = id(clock_tap_dbl) ? 0 : now;
+          // Bump the logger to DEBUG to retune ${clock_double_tap_ms}
+          ESP_LOGD("ui", "clock tap dt=%ums double=%d", (unsigned) dt,
+                   (int) id(clock_tap_dbl));
+      - if:
+          condition:
+            lambda: "return id(clock_tap_dbl);"
+          then:
+            - script.execute: wake_to_launcher
+          else:
+            - script.execute: clock_wake_bright
+
+  - id: clock_wake_bright
+    then:
+      - lambda: |-
+          id(display_asleep) = false;
+          id(screen_forced_off) = false;
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+
+  - id: wake_to_launcher
+    then:
+      - lambda: |-
+          id(display_asleep) = false;
+          id(screen_forced_off) = false;
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+      - lvgl.page.show: page_launcher
+      - script.execute: apply_launcher_focus
+
+  - id: nav_back
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: page_launcher
+          then:
+            - script.execute: go_home_clock
+          else:
+            - if:
+                condition:
+                  lvgl.page.is_showing: page_clock
+                then:
+                  - script.execute: wake_to_launcher
+                else:
+                  - light.turn_on:
+                      id: display_backlight
+                      brightness: 100%
+                  # Time sub-pages step back to the Time hub, not the launcher
+                  - if:
+                      condition:
+                        or:
+                          - lvgl.page.is_showing: page_cities
+                          - lvgl.page.is_showing: page_pomodoro
+                          - lvgl.page.is_showing: page_stopwatch
+                          - lvgl.page.is_showing: page_timer
+                          - lvgl.page.is_showing: page_weather
+                      then:
+                        - lvgl.page.show: page_time
+                        - script.execute: time_hub_refresh
+                        - script.execute: time_hub_focus
+                      else:
+                        - lvgl.page.show: page_launcher
+                        - script.execute: apply_launcher_focus
+      - script.execute:
+          id: ui_beep
+          tune: "back:d=16,o=5,b=160:e,c"
+
+  - id: maybe_wake
+    then:
+      - if:
+          condition:
+            or:
+              - lambda: "return id(display_asleep);"
+              - lvgl.page.is_showing: page_clock
+          then:
+            - script.execute: clock_wake_bright
+
+  - id: front_action
+    then:
+      # Snapshot the page *before* any handler runs. Several of them navigate
+      # (the launcher opens a page, the Time hub opens a sub-page), and with a
+      # flat chain of `lvgl.page.is_showing` the new page's handler would fire
+      # in the same press — one click on the launcher landed on Cities.
+      - lambda: "id(front_page) = lv_screen_active();"
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_launcher)->obj;"
+          then:
+            - script.execute: launcher_open_selected
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_settings)->obj;"
+          then:
+            - script.execute: settings_activate
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_scenes)->obj;"
+          then:
+            - script.execute: scene_activate
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_plugs)->obj;"
+          then:
+            - script.execute: plug_toggle
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_lights)->obj;"
+          then:
+            - script.execute: light_toggle
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_ac)->obj;"
+          then:
+            # Dial adjusts the focused field; the press picks which one.
+            - script.execute:
+                id: ac_set_focus
+                focus: !lambda "return id(ac_focus) == 0 ? 1 : 0;"
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_time)->obj;"
+          then:
+            - script.execute: time_hub_open
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_pomodoro)->obj;"
+          then:
+            - script.execute: pomo_toggle
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_stopwatch)->obj;"
+          then:
+            - script.execute: sw_toggle
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_timer)->obj;"
+          then:
+            - script.execute: timer_toggle
+      - if:
+          condition:
+            lambda: "return id(front_page) == id(page_weather)->obj;"
+          then:
+            - script.execute: weather_fetch
+
+  - id: front_or_wake
+    then:
+      - if:
+          condition:
+            or:
+              - lambda: "return id(display_asleep);"
+              - lvgl.page.is_showing: page_clock
+          then:
+            - script.execute: wake_to_launcher
+          else:
+            - script.execute: front_action
+
+  - id: encoder_nav_cw
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: page_launcher
+          then:
+            - lambda: "id(launcher_index) = (id(launcher_index) + 1) % 6;"
+            - script.execute: apply_launcher_focus
+      - if:
+          condition:
+            lvgl.page.is_showing: page_settings
+          then:
+            - lambda: "id(settings_index) = (id(settings_index) + 1) % 8;"
+            - script.execute: apply_settings_focus
+      - if:
+          condition:
+            lvgl.page.is_showing: page_lights
+          then:
+            - script.execute:
+                id: light_bri_step
+                delta: 1
+      - if:
+          condition:
+            lvgl.page.is_showing: page_plugs
+          then:
+            - lambda: "id(plug_sel) = (id(plug_sel) + 1) % ${plug_count};"
+            - script.execute: plugs_refresh
+      - if:
+          condition:
+            lvgl.page.is_showing: page_scenes
+          then:
+            - lambda: "id(scene_index) = (id(scene_index) + 1) % 4;"
+            - script.execute: scenes_refresh
+      - if:
+          condition:
+            lvgl.page.is_showing: page_time
+          then:
+            - lambda: "id(time_hub_index) = (id(time_hub_index) + 1) % 5;"
+            - script.execute: time_hub_focus
+      - if:
+          condition:
+            lvgl.page.is_showing: page_cities
+          then:
+            - script.execute: city_next
+      - if:
+          condition:
+            lvgl.page.is_showing: page_timer
+          then:
+            - script.execute: timer_up
+      - if:
+          condition:
+            lvgl.page.is_showing: page_pomodoro
+          then:
+            - script.execute: pomo_up
+      - if:
+          condition:
+            lvgl.page.is_showing: page_ac
+          then:
+            - script.execute:
+                id: ac_dial_adjust
+                delta: 1
+
+  - id: encoder_nav_ccw
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: page_launcher
+          then:
+            - lambda: "id(launcher_index) = (id(launcher_index) + 5) % 6;"
+            - script.execute: apply_launcher_focus
+      - if:
+          condition:
+            lvgl.page.is_showing: page_settings
+          then:
+            - lambda: "id(settings_index) = (id(settings_index) + 7) % 8;"
+            - script.execute: apply_settings_focus
+      - if:
+          condition:
+            lvgl.page.is_showing: page_lights
+          then:
+            - script.execute:
+                id: light_bri_step
+                delta: -1
+      - if:
+          condition:
+            lvgl.page.is_showing: page_plugs
+          then:
+            - lambda: "id(plug_sel) = (id(plug_sel) + ${plug_count} - 1) % ${plug_count};"
+            - script.execute: plugs_refresh
+      - if:
+          condition:
+            lvgl.page.is_showing: page_scenes
+          then:
+            - lambda: "id(scene_index) = (id(scene_index) + 3) % 4;"
+            - script.execute: scenes_refresh
+      - if:
+          condition:
+            lvgl.page.is_showing: page_time
+          then:
+            - lambda: "id(time_hub_index) = (id(time_hub_index) + 4) % 5;"
+            - script.execute: time_hub_focus
+      - if:
+          condition:
+            lvgl.page.is_showing: page_cities
+          then:
+            - script.execute: city_prev
+      - if:
+          condition:
+            lvgl.page.is_showing: page_timer
+          then:
+            - script.execute: timer_down
+      - if:
+          condition:
+            lvgl.page.is_showing: page_pomodoro
+          then:
+            - script.execute: pomo_down
+      - if:
+          condition:
+            lvgl.page.is_showing: page_ac
+          then:
+            - script.execute:
+                id: ac_dial_adjust
+                delta: -1
+
+lvgl:
+  displays:
+    - round_display
+  touchscreens:
+    - touch
+  rotation: 180
+  buffer_size: 25%
+  on_idle:
+    - timeout: 45s
+      then:
+        - if:
+            condition:
+              lambda: |-
+                auto t = id(sntp_time).now();
+                bool night = id(night_mode_enabled) && t.is_valid() && (t.hour >= 22 || t.hour < 8);
+                return !(night || id(screen_forced_off) || id(display_asleep));
+            then:
+              - script.execute: go_home_clock
+    - timeout: 60s
+      then:
+        - if:
+            condition:
+              lambda: |-
+                auto t = id(sntp_time).now();
+                bool night = id(night_mode_enabled) && t.is_valid() && (t.hour >= 22 || t.hour < 8);
+                return night || id(screen_forced_off);
+            then:
+              - script.execute: screen_sleep
+  # No `encoders:` indev on purpose. LVGL's group focus is a second selection
+  # model on top of the *_index globals that actually paint the amber border,
+  # and ESPHome puts every widget of every page into one flat group — so the
+  # encoder walked focus onto widgets of *other* pages and the front button
+  # clicked them. The encoder and the buttons are wired to scripts in
+  # hardware.yaml instead (encoder_nav_cw/ccw, front_or_wake, nav_back), which
+  # is where all navigation already lived.
+
+  style_definitions:
+    - id: st_bg
+      bg_color: 0x0B0F11
+      bg_opa: COVER
+      border_width: 0
+      pad_all: 0
+      radius: 0
+    - id: st_text
+      text_color: 0xF4F7F8
+      text_font: font_ui
+      text_align: CENTER
+    - id: st_accent
+      arc_color: 0xFFD400
+      arc_width: 8
+      border_color: 0xFFD400
+      border_width: 1
+    - id: st_chip
+      bg_color: 0x0B0F11
+      bg_opa: COVER
+      text_color: 0xF4F7F8
+      text_font: font_label
+      radius: 14
+      pad_all: 2
+      border_width: 1
+      border_color: 0x333B3E
+    - id: st_row
+      bg_color: 0x0B0F11
+      bg_opa: COVER
+      text_color: 0xF4F7F8
+      text_font: font_label
+      radius: 14
+      pad_all: 4
+      border_width: 2
+      border_color: 0x333B3E
+    - id: st_seg
+      bg_color: 0x0B0F11
+      bg_opa: COVER
+      border_width: 2
+      border_color: 0x333B3E
+      radius: 18
+      text_color: 0xF4F7F8
+      text_font: font_label
+      pad_all: 2
+
+  pages:
+    # —— Home clock (minute dial only here) ——
+    - id: page_clock
+      styles: st_bg
+      widgets:
+        - meter:
+            id: clock_meter
+            align: CENTER
+            width: 236
+            height: 236
+            bg_opa: TRANSP
+            border_width: 0
+            indicator:
+              bg_opa: TRANSP
+            scales:
+              - id: clock_scale
+                range_from: 0
+                range_to: 60
+                angle_range: 360
+                rotation: 90
+                ticks:
+                  count: 61
+                  length: 3
+                  width: 1
+                  color: 0x9EA7AA
+                  major:
+                    stride: 5
+                    length: 7
+                    width: 2
+                    color: 0xF4F7F8
+                    label_gap: 10
+                indicators:
+                  - line:
+                      id: ind_clock_min
+                      width: 3
+                      color: 0xFFD400
+                      length: 12
+                      radial_offset: 98
+                      value: 0
+        - label:
+            id: lbl_clock_dow
+            styles: st_text
+            align: CENTER
+            x: -48
+            y: -52
+            text_font: font_label
+            text_color: 0x63E7F2
+            text: "---"
+        - label:
+            id: lbl_clock_dom
+            styles: st_text
+            align: CENTER
+            y: -52
+            text_font: font_big
+            text: "--"
+        - label:
+            id: lbl_clock_mon
+            styles: st_text
+            align: CENTER
+            x: 48
+            y: -52
+            text_font: font_label
+            text_color: 0x63E7F2
+            text: "---"
+        - label:
+            id: lbl_clock_main
+            styles: st_text
+            align: CENTER
+            y: 12
+            text_font: font_clock
+            text: "--:--"
+        - label:
+            id: lbl_clock_ampm
+            styles: st_text
+            align: CENTER
+            y: 52
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: ""
+        - button:
+            id: btn_clock_wake
+            align: CENTER
+            width: 240
+            height: 240
+            bg_opa: TRANSP
+            shadow_opa: TRANSP
+            border_width: 0
+            # Double tap opens the launcher, detected in clock_tap from click
+            # timing alone. LVGL's own DOUBLE_CLICKED is logged for reference
+            # but not used: it also requires both taps within scroll_limit
+            # (10px), which a finger rarely satisfies.
+            on_press:
+              - script.execute: clock_tap
+
+    # —— Pie launcher (6 wedges + Home) ——
+    - id: page_launcher
+      styles: st_bg
+      on_load:
+        then:
+          - lambda: "id(display_asleep) = false;"
+          - script.execute: apply_launcher_focus
+      widgets:
+        - button:
+            id: btn_home_center
+            styles: st_seg
+            width: 44
+            height: 44
+            align: CENTER
+            border_color: 0x333B3E
+            widgets:
+              - label:
+                  text: "HOME"
+                  align: CENTER
+                  text_font: font_label
+                  text_color: 0xF4F7F8
+            on_click:
+              - script.execute: go_home_clock
+        # Settings top
+        - button:
+            id: btn_seg_settings
+            styles: st_seg
+            width: 72
+            height: 44
+            align: CENTER
+            x: 0
+            y: -78
+            widgets:
+              - label:
+                  id: icon_seg_settings
+                  text: "\U000F0493"
+                  align: CENTER
+                  y: -8
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+              - label:
+                  id: lbl_seg_settings
+                  text: "SET"
+                  align: CENTER
+                  y: 11
+                  text_font: font_label
+            on_press:
+              - lambda: "id(launcher_index) = 0;"
+              - script.execute: apply_launcher_focus
+            on_click:
+              - lambda: "id(launcher_index) = 0;"
+              - script.execute: open_settings
+        # AC NE
+        - button:
+            id: btn_seg_ac
+            styles: st_seg
+            width: 64
+            height: 42
+            align: CENTER
+            x: 64
+            y: -38
+            border_color: 0xFFD400
+            widgets:
+              - label:
+                  id: icon_seg_ac
+                  text: "\U000F0717"
+                  align: CENTER
+                  y: -8
+                  text_font: font_icon
+                  text_color: 0x63E7F2
+              - label:
+                  id: lbl_seg_ac
+                  text: "AC"
+                  align: CENTER
+                  y: 11
+                  text_font: font_label
+                  text_color: 0x9EA7AA
+            on_press:
+              - lambda: "id(launcher_index) = 1;"
+              - script.execute: apply_launcher_focus
+            on_click:
+              - lambda: "id(launcher_index) = 1;"
+              - script.execute: open_ac
+        # Plugs SE
+        - button:
+            id: btn_seg_plugs
+            styles: st_seg
+            width: 64
+            height: 42
+            align: CENTER
+            x: 64
+            y: 38
+            widgets:
+              - label:
+                  id: icon_seg_plugs
+                  text: "\U000F06A5"
+                  align: CENTER
+                  y: -8
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+              - label:
+                  id: lbl_seg_plugs
+                  text: "PLUG"
+                  align: CENTER
+                  y: 11
+                  text_font: font_label
+            on_press:
+              - lambda: "id(launcher_index) = 2;"
+              - script.execute: apply_launcher_focus
+            on_click:
+              - lambda: "id(launcher_index) = 2;"
+              - script.execute: open_plugs
+        # Lights bottom
+        - button:
+            id: btn_seg_lights
+            styles: st_seg
+            width: 72
+            height: 44
+            align: CENTER
+            x: 0
+            y: 78
+            widgets:
+              - label:
+                  id: icon_seg_lights
+                  text: "\U000F0335"
+                  align: CENTER
+                  y: -8
+                  text_font: font_icon
+                  text_color: 0xFFD400
+              - label:
+                  id: lbl_seg_lights
+                  text: "LIGHT"
+                  align: CENTER
+                  y: 11
+                  text_font: font_label
+            on_press:
+              - lambda: "id(launcher_index) = 3;"
+              - script.execute: apply_launcher_focus
+            on_click:
+              - lambda: "id(launcher_index) = 3;"
+              - script.execute: open_lights
+        # Time SW
+        - button:
+            id: btn_seg_time
+            styles: st_seg
+            width: 64
+            height: 42
+            align: CENTER
+            x: -64
+            y: 38
+            widgets:
+              - label:
+                  id: icon_seg_time
+                  text: "\U000F0150"
+                  align: CENTER
+                  y: -8
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+              - label:
+                  id: lbl_seg_time
+                  text: "TIME"
+                  align: CENTER
+                  y: 11
+                  text_font: font_label
+            on_press:
+              - lambda: "id(launcher_index) = 4;"
+              - script.execute: apply_launcher_focus
+            on_click:
+              - lambda: "id(launcher_index) = 4;"
+              - script.execute: open_time
+        # Scenes NW
+        - button:
+            id: btn_seg_scenes
+            styles: st_seg
+            width: 64
+            height: 42
+            align: CENTER
+            x: -64
+            y: -38
+            widgets:
+              - label:
+                  id: icon_seg_scenes
+                  text: "\U000F03D8"
+                  align: CENTER
+                  y: -8
+                  text_font: font_icon
+                  text_color: 0xFF8A00
+              - label:
+                  id: lbl_seg_scenes
+                  text: "SCENE"
+                  align: CENTER
+                  y: 11
+                  text_font: font_label
+            on_press:
+              - lambda: "id(launcher_index) = 5;"
+              - script.execute: apply_launcher_focus
+            on_click:
+              - lambda: "id(launcher_index) = 5;"
+              - script.execute: open_scenes
+
+  on_boot:
+    - delay: 500ms
+    # Settings persist via include/settings_store.h (immediate NVS write), so
+    # they are read back explicitly rather than through restore_value.
+    - lambda: |-
+        id(display_rotation) = m5dial::load_or<m5dial::KEY_ROTATION>(180);
+        id(night_mode_enabled) = m5dial::load_or<m5dial::KEY_NIGHT>(false);
+        id(fallback_ap_enabled) = m5dial::load_or<m5dial::KEY_AP>(${ap_default});
+        id(ui_sound_enabled) = m5dial::load_or<m5dial::KEY_SOUND>(false);
+        id(ac_power) = m5dial::load_or<m5dial::KEY_AC_POWER>(false);
+        id(ac_temp) = m5dial::load_or<m5dial::KEY_AC_TEMP>(24);
+        id(ac_fan) = m5dial::load_or<m5dial::KEY_AC_FAN>(0);
+        id(clock_24h) = m5dial::load_or<m5dial::KEY_CLOCK24>(true);
+        id(ring_numerals) = m5dial::load_or<m5dial::KEY_TICKNUM>(true);
+    - script.execute: apply_fallback_ap
+    - script.execute: apply_display_rotation
+    - script.execute: apply_ring_numerals
+    - light.turn_on:
+        id: display_backlight
+        brightness: 40%
+    - lvgl.page.show: page_clock

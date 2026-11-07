@@ -12,7 +12,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-ui = (ROOT / "packages" / "ui.yaml").read_text()
+UI_DIR = ROOT / "packages" / "ui"
+# base.yaml first: it holds style_definitions, which later checks refer to
+ui = "\n".join(p.read_text() for p in sorted(UI_DIR.glob("*.yaml"), key=lambda p: p.name != "base.yaml"))
 hw = (ROOT / "packages" / "hardware.yaml").read_text()
 ac = (ROOT / "packages" / "ac.yaml").read_text()
 tm = (ROOT / "packages" / "time.yaml").read_text()
@@ -48,7 +50,7 @@ for line in ui.splitlines():
         if m := re.match(r"^\s+-\s+id:\s+(st_\S+)\s*$", line):
             defined.add(m.group(1).strip("\"'"))
 if not defined:
-    fails.append("no style_definitions in ui.yaml")
+    fails.append("no style_definitions in packages/ui/base.yaml")
 for ref in set(re.findall(r"^\s+styles:\s+([A-Za-z0-9_]+)\s*$", ui, re.M)) - defined:
     fails.append(f"styles: {ref} is referenced but never defined")
 
@@ -59,7 +61,7 @@ for ref in set(re.findall(r"^\s+styles:\s+([A-Za-z0-9_]+)\s*$", ui, re.M)) - def
 # page in one flat group, so focus wanders onto other pages' widgets and the
 # front button clicks them.
 if re.search(r"^\s+encoders:", ui, re.M):
-    fails.append("lvgl encoders: reintroduces a second selection model — see the note in ui.yaml")
+    fails.append("lvgl encoders: reintroduces a second selection model — see the note in packages/ui/base.yaml")
 if "dial_group" in ui:
     fails.append("group: dial_group reintroduces LVGL group focus")
 
@@ -98,7 +100,7 @@ if "include/agent.h" not in debug or "debug.yaml" not in main:
 # —— Public build ——————————————————————————————————————————————————
 # dialha.factory.yaml is published, so nothing it pulls in may read secrets.yaml.
 factory = (ROOT / "dialha.factory.yaml").read_text()
-for path in [ROOT / "dialha.factory.yaml", *sorted((ROOT / "packages").glob("*.yaml"))]:
+for path in [ROOT / "dialha.factory.yaml", *sorted((ROOT / "packages").rglob("*.yaml"))]:
     if path.name != "debug.yaml" and "!secret" in strip_comments(path.read_text()):
         fails.append(f"{path.relative_to(ROOT)} uses !secret; the public build would need secrets.yaml")
 if "debug.yaml" in factory:
@@ -110,7 +112,7 @@ if "debug.yaml" in factory:
 if "restore_value" in strip_comments(ac):
     fails.append("ac.yaml should persist via settings_store.h, not restore_value")
 if "restore_value: true" in strip_comments(ui):
-    fails.append("ui.yaml globals should persist via settings_store.h")
+    fails.append("ui globals should persist via settings_store.h")
 if "id: ac_persist" not in ac or "m5dial::commit()" not in ac:
     fails.append("ac.yaml missing the ac_persist script")
 store = (ROOT / "include" / "settings_store.h").read_text()

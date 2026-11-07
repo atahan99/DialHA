@@ -53,4 +53,11 @@ packages:
   ac: !include ac.yaml
   time: !include time.yaml
   weather: !include weather.yaml
-  ui: !include ui.yaml
+  # base first: its page_clock is the page LVGL starts on
+  ui_base: !include ui/base.yaml
+  ui_ac: !include ui/ac.yaml
+  ui_lights: !include ui/lights.yaml
+  ui_plugs: !include ui/plugs.yaml
+  ui_scenes: !include ui/scenes.yaml
+  ui_settings: !include ui/settings.yaml
+  ui_time: !include ui/time.yaml

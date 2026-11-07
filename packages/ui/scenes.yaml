@@ -1,0 +1,126 @@
+# Scenes page: HA scene.* activators.
+
+script:
+  - id: open_scenes
+    then:
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+      - lvgl.page.show: page_scenes
+      - script.execute: scenes_refresh
+  - id: scene_activate
+    then:
+      - homeassistant.action:
+          action: scene.turn_on
+          data:
+            entity_id: !lambda |-
+              static const char* ents[] = {
+                "${scene_1_entity}", "${scene_2_entity}",
+                "${scene_3_entity}", "${scene_4_entity}"
+              };
+              return std::string(ents[id(scene_index) % 4]);
+      - script.execute:
+          id: ui_beep
+          tune: "ok:d=32,o=5,b=180:g,c6"
+
+  - id: scenes_refresh
+    then:
+      - lambda: |-
+          lv_obj_t *rows[] = {id(row_scene_0), id(row_scene_1), id(row_scene_2), id(row_scene_3)};
+          for (int i = 0; i < 4; i++)
+            lv_obj_set_style_border_color(
+                rows[i], lv_color_hex(i == id(scene_index) ? 0xFFD400 : 0x333B3E), 0);
+
+lvgl:
+  pages:
+    # —— Scenes ——
+    - id: page_scenes
+      styles: st_bg
+      widgets:
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -92
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "SCENES"
+        - button:
+            id: row_scene_0
+            styles: st_row
+            width: 180
+            height: 32
+            align: CENTER
+            y: -51
+            border_color: 0xFFD400
+            widgets:
+              - label:
+                  text: ${scene_1_name}
+                  align: CENTER
+                  text_font: font_label
+            on_click:
+              - lambda: "id(scene_index) = 0;"
+              - script.execute: scenes_refresh
+              - script.execute: scene_activate
+        - button:
+            id: row_scene_1
+            styles: st_row
+            width: 180
+            height: 32
+            align: CENTER
+            y: -17
+            widgets:
+              - label:
+                  text: ${scene_2_name}
+                  align: CENTER
+                  text_font: font_label
+            on_click:
+              - lambda: "id(scene_index) = 1;"
+              - script.execute: scenes_refresh
+              - script.execute: scene_activate
+        - button:
+            id: row_scene_2
+            styles: st_row
+            width: 180
+            height: 32
+            align: CENTER
+            y: 17
+            widgets:
+              - label:
+                  text: ${scene_3_name}
+                  align: CENTER
+                  text_font: font_label
+            on_click:
+              - lambda: "id(scene_index) = 2;"
+              - script.execute: scenes_refresh
+              - script.execute: scene_activate
+        - button:
+            id: row_scene_3
+            styles: st_row
+            width: 180
+            height: 32
+            align: CENTER
+            y: 51
+            widgets:
+              - label:
+                  text: ${scene_4_name}
+                  align: CENTER
+                  text_font: font_label
+            on_click:
+              - lambda: "id(scene_index) = 3;"
+              - script.execute: scenes_refresh
+              - script.execute: scene_activate
+        - button:
+            id: btn_back_scenes
+            styles: st_chip
+            width: 42
+            height: 24
+            align: CENTER
+            y: 94
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back

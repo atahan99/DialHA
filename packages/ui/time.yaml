@@ -1,0 +1,687 @@
+# Time hub ring and its pages. Their logic lives in packages/time.yaml.
+
+script:
+  - id: open_time
+    then:
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
+      - lvgl.page.show: page_time
+      - script.execute: time_hub_refresh
+      - script.execute: time_hub_focus
+
+lvgl:
+  pages:
+    # —— Time hub: launcher-style ring, one function per page ——
+    - id: page_time
+      styles: st_bg
+      widgets:
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -94
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "TIME"
+        - label:
+            id: lbl_hub_clock
+            styles: st_text
+            align: CENTER
+            y: -2
+            text_font: font_big
+            text: "--:--"
+        - button:
+            id: btn_hub_cities
+            styles: st_seg
+            width: 52
+            height: 44
+            align: CENTER
+            x: 0
+            y: -58
+            widgets:
+              - label:
+                  id: icon_hub_cities
+                  text: "\U000F01E7"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x63E7F2
+            on_press:
+              - lambda: "id(time_hub_index) = 0;"
+              - script.execute: time_hub_focus
+            on_click:
+              - lambda: "id(time_hub_index) = 0;"
+              - script.execute: time_hub_open
+        - button:
+            id: btn_hub_pomo
+            styles: st_seg
+            width: 52
+            height: 44
+            align: CENTER
+            x: 66
+            y: -18
+            widgets:
+              - label:
+                  id: icon_hub_pomo
+                  text: "\U000F051F"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0xFF8A00
+            on_press:
+              - lambda: "id(time_hub_index) = 1;"
+              - script.execute: time_hub_focus
+            on_click:
+              - lambda: "id(time_hub_index) = 1;"
+              - script.execute: time_hub_open
+        - button:
+            id: btn_hub_sw
+            styles: st_seg
+            width: 52
+            height: 44
+            align: CENTER
+            x: 42
+            y: 52
+            widgets:
+              - label:
+                  id: icon_hub_sw
+                  text: "\U000F051B"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_press:
+              - lambda: "id(time_hub_index) = 2;"
+              - script.execute: time_hub_focus
+            on_click:
+              - lambda: "id(time_hub_index) = 2;"
+              - script.execute: time_hub_open
+        - button:
+            id: btn_hub_timer
+            styles: st_seg
+            width: 52
+            height: 44
+            align: CENTER
+            x: -42
+            y: 52
+            widgets:
+              - label:
+                  id: icon_hub_timer
+                  text: "\U000F13AB"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_press:
+              - lambda: "id(time_hub_index) = 3;"
+              - script.execute: time_hub_focus
+            on_click:
+              - lambda: "id(time_hub_index) = 3;"
+              - script.execute: time_hub_open
+        - button:
+            id: btn_hub_wx
+            styles: st_seg
+            width: 52
+            height: 44
+            align: CENTER
+            x: -66
+            y: -18
+            widgets:
+              - label:
+                  id: icon_hub_wx
+                  text: "\U000F0595"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x63E7F2
+            on_press:
+              - lambda: "id(time_hub_index) = 4;"
+              - script.execute: time_hub_focus
+            on_click:
+              - lambda: "id(time_hub_index) = 4;"
+              - script.execute: time_hub_open
+        - button:
+            id: btn_back_time
+            styles: st_chip
+            width: 42
+            height: 24
+            align: CENTER
+            y: 96
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back
+
+    # —— Cities ——
+    - id: page_cities
+      styles: st_bg
+      widgets:
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -94
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "CITIES"
+        - label:
+            id: lbl_city_time
+            styles: st_text
+            align: CENTER
+            y: -18
+            text_font: font_big
+            text: "--:--"
+        - label:
+            id: lbl_city_name
+            styles: st_text
+            align: CENTER
+            y: 14
+            text_font: font_label
+            text_color: 0x63E7F2
+            text: "-"
+        - label:
+            id: lbl_city_dots
+            styles: st_text
+            align: CENTER
+            y: 34
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "....."
+        - button:
+            id: btn_city_prev
+            styles: st_chip
+            width: 46
+            height: 28
+            align: CENTER
+            x: -54
+            y: 58
+            widgets:
+              - label:
+                  text: "\U000F0141"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: city_prev
+        - button:
+            id: btn_city_next
+            styles: st_chip
+            width: 46
+            height: 28
+            align: CENTER
+            x: 54
+            y: 58
+            widgets:
+              - label:
+                  text: "\U000F0142"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: city_next
+        - button:
+            id: btn_back_cities
+            styles: st_chip
+            width: 42
+            height: 24
+            align: CENTER
+            y: 92
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back
+
+    # —— Pomodoro ——
+    - id: page_pomodoro
+      styles: st_bg
+      widgets:
+        - arc:
+            id: arc_pomo
+            align: CENTER
+            y: -10
+            width: 140
+            height: 140
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 6
+            arc_color: 0x1B2427
+            indicator:
+              arc_width: 6
+              arc_color: 0xFF8A00
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -94
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "POMODORO"
+        - label:
+            id: lbl_pomo_time
+            styles: st_text
+            align: CENTER
+            y: -18
+            text_font: font_big
+            text: "25:00"
+        - label:
+            id: lbl_pomo_state
+            styles: st_text
+            align: CENTER
+            y: 12
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "FOCUS"
+        - button:
+            id: btn_pomo_play
+            styles: st_chip
+            width: 46
+            height: 28
+            align: CENTER
+            x: -28
+            y: 58
+            widgets:
+              - label:
+                  id: icon_pomo_play
+                  text: "\U000F040A"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: pomo_toggle
+        - button:
+            id: btn_pomo_reset
+            styles: st_chip
+            width: 46
+            height: 28
+            align: CENTER
+            x: 28
+            y: 58
+            widgets:
+              - label:
+                  text: "\U000F0709"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: pomo_reset
+        - button:
+            id: btn_back_pomo
+            styles: st_chip
+            width: 42
+            height: 24
+            align: CENTER
+            y: 92
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back
+
+    # —— Stopwatch ——
+    - id: page_stopwatch
+      styles: st_bg
+      widgets:
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -94
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "STOPWATCH"
+        - label:
+            id: lbl_sw_time
+            styles: st_text
+            align: CENTER
+            y: -18
+            text_font: font_big
+            text: "00:00.0"
+        - label:
+            id: lbl_sw_state
+            styles: st_text
+            align: CENTER
+            y: 12
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "STOPPED"
+        - button:
+            id: btn_sw_play
+            styles: st_chip
+            width: 46
+            height: 28
+            align: CENTER
+            x: -28
+            y: 58
+            widgets:
+              - label:
+                  id: icon_sw_play
+                  text: "\U000F040A"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: sw_toggle
+        - button:
+            id: btn_sw_reset
+            styles: st_chip
+            width: 46
+            height: 28
+            align: CENTER
+            x: 28
+            y: 58
+            widgets:
+              - label:
+                  text: "\U000F0709"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: sw_reset
+        - button:
+            id: btn_back_sw
+            styles: st_chip
+            width: 42
+            height: 24
+            align: CENTER
+            y: 92
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back
+
+    # —— Timer ——
+    - id: page_timer
+      styles: st_bg
+      widgets:
+        - arc:
+            id: arc_timer
+            align: CENTER
+            y: -10
+            width: 140
+            height: 140
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 6
+            arc_color: 0x1B2427
+            indicator:
+              arc_width: 6
+              arc_color: 0x63E7F2
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -94
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "TIMER"
+        - label:
+            id: lbl_timer_time
+            styles: st_text
+            align: CENTER
+            y: -18
+            text_font: font_big
+            text: "00:05:00"
+        - label:
+            id: lbl_timer_state
+            styles: st_text
+            align: CENTER
+            y: 12
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "READY"
+        - button:
+            id: btn_timer_minus
+            styles: st_chip
+            width: 38
+            height: 28
+            align: CENTER
+            x: -62
+            y: 58
+            widgets:
+              - label:
+                  text: "\U000F0374"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: timer_down
+        - button:
+            id: btn_timer_play
+            styles: st_chip
+            width: 44
+            height: 28
+            align: CENTER
+            x: 0
+            y: 58
+            widgets:
+              - label:
+                  id: icon_timer_play
+                  text: "\U000F040A"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: timer_toggle
+        - button:
+            id: btn_timer_plus
+            styles: st_chip
+            width: 38
+            height: 28
+            align: CENTER
+            x: 62
+            y: 58
+            widgets:
+              - label:
+                  text: "\U000F0415"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: timer_up
+        - button:
+            id: btn_timer_reset
+            styles: st_chip
+            width: 38
+            height: 24
+            align: CENTER
+            x: 34
+            y: 88
+            widgets:
+              - label:
+                  text: "\U000F0709"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: timer_reset
+        - button:
+            id: btn_back_timer
+            styles: st_chip
+            width: 42
+            height: 24
+            align: CENTER
+            x: -30
+            y: 88
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back
+
+    # —— Weather: current + 3-hourly outlook ——
+    - id: page_weather
+      styles: st_bg
+      widgets:
+        - label:
+            styles: st_text
+            align: CENTER
+            y: -94
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: "WEATHER"
+        - label:
+            id: icon_wx_hero
+            align: CENTER
+            x: -46
+            y: -46
+            text_font: font_icon_big
+            text_color: 0x63E7F2
+            text: "\U000F0595"
+        - label:
+            id: lbl_wx_temp
+            styles: st_text
+            align: CENTER
+            x: 26
+            y: -46
+            text_font: font_big
+            text: "--°"
+        - label:
+            id: lbl_wx_sky
+            styles: st_text
+            align: CENTER
+            y: -14
+            text_font: font_label
+            text_color: 0x63E7F2
+            text: "FETCHING"
+        - label:
+            id: lbl_wx_sub
+            styles: st_text
+            align: CENTER
+            y: 4
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: ""
+        - label:
+            id: lbl_wx_h0
+            styles: st_text
+            align: CENTER
+            x: -63
+            y: 26
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: ""
+        - label:
+            id: icon_wx_h0
+            align: CENTER
+            x: -63
+            y: 44
+            text_font: font_icon
+            text_color: 0x63E7F2
+            text: ""
+        - label:
+            id: lbl_wxt_h0
+            styles: st_text
+            align: CENTER
+            x: -63
+            y: 62
+            text_font: font_label
+            text: ""
+        - label:
+            id: lbl_wx_h1
+            styles: st_text
+            align: CENTER
+            x: -21
+            y: 26
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: ""
+        - label:
+            id: icon_wx_h1
+            align: CENTER
+            x: -21
+            y: 44
+            text_font: font_icon
+            text_color: 0x63E7F2
+            text: ""
+        - label:
+            id: lbl_wxt_h1
+            styles: st_text
+            align: CENTER
+            x: -21
+            y: 62
+            text_font: font_label
+            text: ""
+        - label:
+            id: lbl_wx_h2
+            styles: st_text
+            align: CENTER
+            x: 21
+            y: 26
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: ""
+        - label:
+            id: icon_wx_h2
+            align: CENTER
+            x: 21
+            y: 44
+            text_font: font_icon
+            text_color: 0x63E7F2
+            text: ""
+        - label:
+            id: lbl_wxt_h2
+            styles: st_text
+            align: CENTER
+            x: 21
+            y: 62
+            text_font: font_label
+            text: ""
+        - label:
+            id: lbl_wx_h3
+            styles: st_text
+            align: CENTER
+            x: 63
+            y: 26
+            text_font: font_label
+            text_color: 0x9EA7AA
+            text: ""
+        - label:
+            id: icon_wx_h3
+            align: CENTER
+            x: 63
+            y: 44
+            text_font: font_icon
+            text_color: 0x63E7F2
+            text: ""
+        - label:
+            id: lbl_wxt_h3
+            styles: st_text
+            align: CENTER
+            x: 63
+            y: 62
+            text_font: font_label
+            text: ""
+        - button:
+            id: btn_wx_refresh
+            styles: st_chip
+            width: 44
+            height: 24
+            align: CENTER
+            x: 26
+            y: 90
+            widgets:
+              - label:
+                  text: "\U000F0709"
+                  align: CENTER
+                  text_font: font_icon
+            on_click:
+              - script.execute: weather_fetch
+        - button:
+            id: btn_back_wx
+            styles: st_chip
+            width: 42
+            height: 24
+            align: CENTER
+            x: -26
+            y: 90
+            widgets:
+              - label:
+                  text: "\U000F004D"
+                  align: CENTER
+                  text_font: font_icon
+                  text_color: 0x9EA7AA
+            on_click:
+              - script.execute: nav_back

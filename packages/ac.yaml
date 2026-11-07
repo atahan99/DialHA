@@ -140,7 +140,7 @@ remote_receiver:
 globals:
   # Persisted through include/settings_store.h rather than restore_value, so a
   # change survives an immediate power cut (see the note in README "Settings
-  # persistence"). Loaded in the lvgl on_boot block in ui.yaml.
+  # persistence"). Loaded in the lvgl on_boot block in packages/ui/base.yaml.
   - id: ac_power
     type: bool
     initial_value: "false"
